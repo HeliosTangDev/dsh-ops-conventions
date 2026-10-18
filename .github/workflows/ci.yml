@@ -18,10 +18,18 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node }}
+
       - name: 语法检查
         run: |
+          node --version
           node --check index.mjs
           node --check rule.mjs
           node --check install.mjs
+
+      # 直接跑测试文件（不依赖 --test 的目录扫描/子进程分发，排除环境差异）
       - name: 逻辑测试
-        run: node --test test/
+        shell: bash
+        run: |
+          set -e
+          ls -la test
+          node test/rule.test.mjs
