@@ -1,3 +1,7 @@
 node_modules/
 *.log
 .DS_Store
+
+# 本机运维脚本（不进发行仓库）
+rollback.cmd
+sync.cmd
