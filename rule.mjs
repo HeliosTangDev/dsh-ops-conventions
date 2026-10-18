@@ -56,11 +56,11 @@ export function readVersion(file) {
   }
 }
 
-/** 注入内容（保持极短） */
+/** 注入内容（保持极短；措辞是强制要求，不是建议） */
 export function reminderText(version, indexPath) {
   return (
-    `[操作约定 v${version}] 动手前先读 ${indexPath}，按类取清单：` +
-    "脚本=ops-scripts、笔记=ops-notes、文件=ops-files、自检=ops-check、长任务=ops-longtask、DSH=ops-dsh。版本变了会再提醒。"
+    `[操作约定 v${version}｜强制] 要求不是建议：动手前必须 read ${indexPath} 并执行对应清单` +
+    "（ops-scripts/notes/files/check/longtask/dsh），收尾按 ops-check 自检；跳过=未完成。"
   );
 }
 
