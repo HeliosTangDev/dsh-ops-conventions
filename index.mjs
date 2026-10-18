@@ -1,4 +1,4 @@
-import { appendFileSync, mkdirSync } from "node:fs";
+import { appendFileSync, mkdirSync, existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { createUserMessage } from "@deepseek-ai/dsh-llm";
 import {
@@ -8,10 +8,19 @@ import {
   resolveLogFile,
   resolveSkillsDir,
   shouldInject,
+  skillsDirCandidates,
 } from "./rule.mjs";
 
 export const name = "dsh-ops-conventions";
 export const inject = ["agents"];
+
+function existsSyncSafe(p) {
+  try {
+    return existsSync(p);
+  } catch {
+    return false;
+  }
+}
 
 /**
  * 让"操作约定"在动手前确定性出现（不依赖记忆召回的运气）：
@@ -42,7 +51,8 @@ export function apply(ctx, config = {}) {
   } catch {
     /* ignore */
   }
-  log("plugin loaded");
+  log(`plugin loaded  skillsDir=${skillsDir}  indexExists=${existsSyncSafe(indexPath)}`);
+  log(`skillsDir candidates: ${skillsDirCandidates(config).join(" | ")}`);
 
   const GATE = Symbol.for("dsh.opsConventions.injectedVersion");
 

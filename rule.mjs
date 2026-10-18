@@ -1,18 +1,40 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { readFileSync, existsSync } from "node:fs";
+import { join, dirname } from "node:path";
 import { homedir } from "node:os";
+import { fileURLToPath } from "node:url";
 
 // ---- 路径解析（可配置；发行版无硬编码路径） ----
+/** 所有候选目录（排错用，也会按顺序做存在性检查） */
+export function skillsDirCandidates(config = {}) {
+  const local = fileURLToPath(new URL("./skills", import.meta.url)); // 包自带，零配置可用
+  return [
+    config.skillsDir,
+    process.env.DSH_OPS_CONVENTIONS_DIR,
+    local,
+    join(homedir(), ".openviking", "data", "viking", "default", "user", "default", "memories", "ops-conventions"),
+    join(homedir(), ".dsh", "ops-conventions", "skills"),
+  ].filter((p) => typeof p === "string" && p.length > 0);
+}
+
 /**
- * @param {object} config 插件配置
- * @returns {string} 约定技能目录（含 INDEX.md / VERSION）
+ * 按优先级挑一个"真的存在 INDEX.md"的约定目录：
+ *   1) 插件配置 skillsDir
+ *   2) 环境变量 DSH_OPS_CONVENTIONS_DIR
+ *   3) 插件包自带 <package>/skills（发行版自包含，开箱即用）
+ *   4) OpenViking 实际存储：<用户>/.openviking/data/viking/default/user/default/memories/ops-conventions
+ *   5) 用户目录 ~/.dsh/ops-conventions/skills
+ * 都不可用时返回优先级最高的那个（便于日志暴露问题）。
  */
 export function resolveSkillsDir(config = {}) {
-  return (
-    config.skillsDir ||
-    process.env.DSH_OPS_CONVENTIONS_DIR ||
-    join(homedir(), ".dsh", "ops-conventions", "skills")
-  );
+  for (const dir of skillsDirCandidates(config)) {
+    try {
+      if (existsSync(join(dir, "INDEX.md"))) return dir;
+    } catch {
+      /* 权限等异常忽略，继续下一个 */
+    }
+  }
+  const c = skillsDirCandidates(config);
+  return c[0] ?? join(homedir(), ".dsh", "ops-conventions", "skills");
 }
 
 /**
@@ -45,22 +67,27 @@ export function shouldInject(text) {
   return VERBS.test(t) && OBJECTS.test(t);
 }
 
-/** 读约定版本号；读不到就用 1 */
+/** 读约定版本号；支持 VERSION / VERSION.txt / version.json；读不到就用 1 */
 export function readVersion(file) {
-  try {
-    const raw = readFileSync(file, "utf8").trim();
-    const m = raw.match(/v?([0-9][0-9.]*)/i);
-    return m ? m[1] : "1";
-  } catch {
-    return "1";
+  const candidates = [file, `${file}.txt`, join(dirname(file), "version.json")];
+  for (const f of candidates) {
+    try {
+      const raw = readFileSync(f, "utf8").trim();
+      const m = raw.match(/v?([0-9][0-9.]*)/i);
+      if (m) return m[1];
+    } catch {
+      /* 换下一个文件名 */
+    }
   }
+  return "1";
 }
 
 /** 注入内容（保持极短；措辞是强制要求，不是建议） */
 export function reminderText(version, indexPath) {
   return (
     `[操作约定 v${version}｜强制] 要求不是建议：动手前必须 read ${indexPath} 并执行对应清单` +
-    "（ops-scripts/notes/files/check/longtask/dsh），收尾按 ops-check 自检；跳过=未完成。"
+    "（ops-scripts/notes/files/check/longtask/dsh），收尾按 ops-check 自检；跳过=未完成。" +
+    "若 skill 工具报 unknown（旧会话快照所致），直接 read 该文件即可，不要跳过。"
   );
 }
 
