@@ -1,4 +1,4 @@
-﻿---
+---
 name: ops-longtask
 description: 跑长任务/后台任务时必过的清单。用于批量跑批、定时采样、长时段监控、需要中途中断再续跑的任务，以及查看/中断/恢复后台任务。覆盖任务目录约定、taskrun 参数、pid.txt 与 progress.txt、断点续跑与熔断、后台输出只有助手能读、K 中断与 G 恢复、长时段监控不要挂 harness。
 tags:

@@ -1,4 +1,4 @@
-﻿---
+---
 name: ops-scripts
 description: 写脚本或起后台任务前必过的检查清单。用于任何 .ps1/.cmd/.bat/.py 的编写修改、起后台 job、做跑批/监控/采样/启动器、或需要「中断后能续跑」的长任务。覆盖 pid.txt 与 progress.txt、ASCII 与 BOM 编码、-CommandFile 传参、长窗口回收、幂等续跑与熔断、变量名冲突等已知坑。
 tags:

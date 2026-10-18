@@ -4,11 +4,11 @@
 
 ## 它做什么
 
-- **只在"像要动手"的轮次注入**：命中工具/动作关键词时才加一段极短的提醒（约 50 token），闲聊零成本。
+- **只在"像要动手"的轮次注入**：命中工具/动作关键词时才加一段极短的提醒（约 70 token），闲聊零成本。
 - **同一会话同版本只注入一次**：不刷屏。
-- **约定版本变化自动再提醒**：改 `VERSION` 文件后，下一次操作轮会重新注入。
-- **注入日志**：每会话每次注入都记一行，便于核对是否生效。
-- **配合 OpenViking**：操作约定本身存放在 OpenViking 技能里（或任意目录的 `INDEX.md`），本插件负责在动手前把入口提出来。
+- **约定版本变化自动再提醒**：改 `VERSION` 后，下一次操作轮会重新注入。
+- **注入日志**：每次注入记一行（含选中的约定目录、索引是否存在），生效与否可核对。
+- **零配置可用**：包内自带 `skills/` 示例清单；也可以指向你自己的目录，或 OpenViking 里存的那份。
 
 ## 为什么会有这个插件
 
@@ -26,49 +26,90 @@
 
 ## 安装
 
+### 方式一：安装脚本（推荐，跨平台、零依赖）
+
 ```bash
-# 以本地目录安装（推荐，可随时改）
-dsh plugin --profile <profile> add link:/path/to/dsh-ops-conventions
-# 或发布到 npm 后
-dsh plugin --profile <profile> add dsh-ops-conventions
+git clone https://github.com/HeliosTangDev/dsh-ops-conventions.git
+cd dsh-ops-conventions
+node install.mjs                       # 默认装到 ~/.dsh/profiles/desktop
+node install.mjs /path/to/profile      # 指定 profile
+node install.mjs /path/to/profile --uninstall   # 卸载
 ```
 
-> 若用 `link:` 安装而插件依赖 `@deepseek-ai/dsh-llm`，请确保宿主 profile 的 `node_modules` 能被解析（或改用复制安装）。
+它会：复制到 `<profile>/node_modules/dsh-ops-conventions`、在 `package.json` 的 `dependencies` 登记、把包名加进 `dsh.profile.bundles`（不加不会被加载）。
+
+### 方式二：手动
+
+1. 把整个仓库复制到 `<profile>/node_modules/dsh-ops-conventions`；
+2. 编辑 `<profile>/package.json`：
+   ```json
+   "dependencies": { "dsh-ops-conventions": "0.2.0" },
+   "dsh": { "profile": { "bundles": [ ..., "dsh-ops-conventions" ] } }
+   ```
+
+> 注意：`package.json` 里必须有 `dsh.bundle.patch` 指向 `cordis.patch.yml`（本包已带）。缺了它，插件管理器会报「没有声明组合包」，且**不会被加载**。
+
+### 装完
+
+- **热重载**：DSH 插件页 → 找到 `dsh-ops-conventions` → 关掉再打开（不用重启）。
+- 或重启 DeepSeek Harness。
 
 ## 配置
 
-插件接受两个可选项（写在 `cordis.patch.yml` 的 `config` 里，或环境变量）：
-
-| 配置项 | 环境变量 | 默认值 | 说明 |
+| 配置项 | 环境变量 | 默认 | 说明 |
 |---|---|---|---|
-| `skillsDir` | `DSH_OPS_CONVENTIONS_DIR` | `~/.dsh/ops-conventions/skills` | 约定目录，需包含 `INDEX.md` 与 `VERSION` |
-| `logFile` | `DSH_OPS_CONVENTIONS_LOG` | `~/.dsh/ops-conventions/ops-conventions.log` | 注入日志路径 |
+| `skillsDir` | `DSH_OPS_CONVENTIONS_DIR` | 包内 `skills/` | 约定目录，需含 `INDEX.md`；`VERSION` 可有可无 |
+| `logFile` | `DSH_OPS_CONVENTIONS_LOG` | `~/.dsh/ops-conventions/ops-conventions.log` | 注入日志 |
 
-示例：
+解析顺序（会**逐个检查目录里真的有 `INDEX.md`**，取第一个有效的）：
+
+1. 配置项 `skillsDir`
+2. 环境变量 `DSH_OPS_CONVENTIONS_DIR`
+3. **包内 `skills/`**（随包发布，开箱即用）
+4. OpenViking 实际存储：`~/.openviking/data/viking/default/user/default/memories/ops-conventions`
+5. `~/.dsh/ops-conventions/skills`
+
+示例（写进 profile 的 `cordis.patch.yml`）：
 
 ```yaml
-- insert:
-    - id: dsh-ops-conventions
-      name: 'dsh-ops-conventions'
-      config:
-        skillsDir: 'D:/my-conventions/skills'
+- id: dsh-ops-conventions
+  name: "dsh-ops-conventions"
+  config:
+    skillsDir: "D:/my-conventions/skills"
 ```
 
 ## 约定目录结构
 
 ```
 skills/
-├── INDEX.md    # 入口清单（注入文本里会给它的路径）
-├── VERSION     # 版本号；改它就会触发重新注入
-└── ops-*.md    # 各类清单（可选，INDEX 里引用）
+├── INDEX.md          # 入口清单（注入文本里给的就是它的路径）
+├── VERSION           # 版本号；改它 → 下一次操作轮重新注入
+└── ops-scripts/
+    └── SKILL.md      # 各类清单，INDEX.md 里引用
 ```
+
+自带 6 类示例：`ops-scripts`（脚本/后台）、`ops-notes`（笔记）、`ops-files`（文件目录）、`ops-check`（自检）、`ops-longtask`（长任务）、`ops-dsh`（DSH/插件）。可以直接改成你自己的。
 
 ## 机制
 
-- 监听 `agent/pre-step`（waterfall），在模型调用前判断最后一条用户消息是否像"要动手"。
-- 命中且该会话该版本未注入过，就追加一条 `instructions` 来源的用户消息。
-- 任何异常都吞掉，不影响正常对话。
-- 多会话各自独立判断、各自注入。
+- 监听 `agent/pre-step`（waterfall），在模型调用前判断最后一条用户消息像不像"要动手"（工具词 或 动作词+对象词）。
+- 命中且该会话该版本未注入过 → 追加一条 `instructions` 来源的消息。
+- 任何异常都吞掉，不影响正常对话；多会话各自独立判断。
+- 插件页"关掉再打开"即可热重载，不必重启 harness。
+
+## 常见问题
+
+**Q：插件市场里搜不到？**
+A：市场只索引 npm / GitHub 上的包，本地安装的不会出现在搜索结果里；在「已装」列表里能看到。
+
+**Q：卡片显示「异常：这个包没有声明组合包」？**
+A：`package.json` 缺 `dsh.bundle.patch`。本包已带；如果你自己改了包，记得保留。
+
+**Q：模型说 `skill xxx is unknown`？**
+A：那是会话启动时的技能目录快照导致的，与插件无关。直接用 `read` 读注入里给的那个 `INDEX.md` 路径即可。
+
+**Q：注入的提醒会显示在对话里？**
+A：会，作为一条来源为插件的消息。长度约 70 token，一个会话只出现一次（版本变了再一次）。
 
 ## License
 
