@@ -59,3 +59,7 @@ skills/
 ## License
 
 MIT
+
+## Star
+
+如果这个插件对你有用，欢迎在 GitHub 上点个 ⭐ Star，让更多 DSH 用户看到。
