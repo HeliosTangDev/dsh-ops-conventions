@@ -85,12 +85,15 @@ export function readVersion(file) {
   return "1";
 }
 
-/** 注入内容（保持极短；措辞是强制要求，不是建议） */
+/** 注入内容（强制措辞；含 6 行常驻约定，避免依赖会被抽取重写的 profile 段） */
 export function reminderText(version, indexPath) {
   return (
     `[操作约定 v${version}｜强制] 要求不是建议：动手前必须 read ${indexPath} 并执行对应清单` +
-    "（ops-scripts/notes/files/check/longtask/dsh），收尾按 ops-check 自检；跳过=未完成。" +
-    "收尾或进入等待时提一句「关会话，新会话先读 sessions/<卡>」。" +
+    "（ops-scripts/notes/files/check/longtask/dsh），收尾按 ops-check 自检，汇报只列未通过项，" +
+    "再做记忆归并、_tasks 清空、归档登记。" +
+    "常驻：不说「待会儿做」（当场做完，或明说等回来再触发）；先给结论与入口，不列多方案让人挑；" +
+    "改动先备份、失败可回滚，还原用哈希证明；优化收益＜成本就停，由本人拍板；" +
+    "只修改工具区，系统级/提权改动交本人执行；收尾或进入等待时提一句「关会话，新会话先读 sessions/<卡>」。" +
     "若 skill 工具报 unknown（旧会话快照所致），直接 read 该文件即可，不要跳过。"
   );
 }
