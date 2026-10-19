@@ -28,7 +28,7 @@ async function loadPlugin() {
     { logger: { info() {} }, on(name, fn) { handlers.set(name, fn); } },
     { skillsDir: skills, logFile: join(dir, "log.txt") },
   );
-  return { handlers, indexPath: join(skills, "INDEX.md") };
+  return { handlers, indexPath: join(skills, "INDEX.md"), versionFile: join(skills, "VERSION") };
 }
 
 function session(id) {
@@ -89,4 +89,32 @@ test("硬拦截：未读 INDEX 拒绝写工具，读过后放行，闲聊不拦"
     async () => ({ kind: "allow" }),
   );
   assert.equal(noSession.kind, "allow");
+});
+
+test("注入：下一轮即注入（含闲聊），同会话同版本只一次", async () => {
+  const { handlers, versionFile } = await loadPlugin();
+  const s = session("s-inj");
+
+  // 新会话首轮（闲聊）就注入一次
+  const r1 = await enterTurn(handlers, s, "今天天气怎么样");
+  assert.equal(r1.messages.length, 2);
+  assert.ok(JSON.stringify(r1.messages[1]).includes("操作约定"));
+
+  // 同版本不再注入
+  const r2 = await enterTurn(handlers, s, "继续聊");
+  assert.equal(r2.messages.length, 1);
+
+  // 版本变化：下一轮（闲聊）立刻注入
+  writeFileSync(versionFile, "18\n", "utf8");
+  const r3 = await enterTurn(handlers, s, "随便聊聊");
+  assert.equal(r3.messages.length, 2);
+
+  // 再次同版本不注入
+  const r4 = await enterTurn(handlers, s, "还是闲聊");
+  assert.equal(r4.messages.length, 1);
+
+  // 另一个会话首轮也注入一次
+  const s2 = session("s-inj2");
+  const r5 = await enterTurn(handlers, s2, "你好");
+  assert.equal(r5.messages.length, 2);
 });

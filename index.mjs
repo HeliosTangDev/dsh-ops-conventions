@@ -28,8 +28,7 @@ function existsSyncSafe(p) {
 
 /**
  * 让"操作约定"在动手前确定性出现（不依赖记忆召回的运气）：
- *  - 只在"像要动手"的轮次注入（闲聊 0 成本）
- *  - 同一会话同一版本只注入一次；VERSION 变了自动再注入一次
+ *  - 每会话每版本注入一次；VERSION 变了，下一轮就注入（不看轮次类型，闲聊轮也算）
  *  - 硬拦截（enforce，默认开）：操作类轮次里，本会话还没 read INDEX.md 时拒绝写类工具
  * 配置（可选）：
  *  - skillsDir:     约定技能目录（默认 $DSH_OPS_CONVENTIONS_DIR 或 ~/.dsh/ops-conventions/skills）
@@ -82,7 +81,6 @@ export function apply(ctx, config = {}) {
         const text = lastUserText(decision.messages ?? messages);
         const sess = agent?.session;
         if (sess) sess[LAST_TEXT] = text;
-        if (!shouldInject(text)) return decision;
 
         const version = readVersion(versionFile);
         const sid = agent?.session?.id ?? agent?.id ?? "default";
