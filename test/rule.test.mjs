@@ -6,6 +6,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import {
+  DEFAULT_BLOCKED_TOOLS,
+  denyReason,
+  isBlockedTool,
+  isIndexRead,
   shouldInject,
   readVersion,
   reminderText,
@@ -83,4 +87,31 @@ test("取最后一条用户消息", () => {
     "最后一条",
   );
   assert.equal(lastUserText(undefined), "");
+});
+
+test("硬拦截：写工具默认拦截，只读/未知工具放行", () => {
+  assert.ok(DEFAULT_BLOCKED_TOOLS.includes("write"));
+  assert.equal(isBlockedTool("write"), true);
+  assert.equal(isBlockedTool("Edit"), true);
+  assert.equal(isBlockedTool("apply_patch"), true);
+  assert.equal(isBlockedTool("read"), false);
+  assert.equal(isBlockedTool("bash"), false);
+  assert.equal(isBlockedTool("unknown_tool"), false);
+});
+
+test("硬拦截：已读 INDEX 的判定", () => {
+  const idx = "D:\\software\\ToolsDev\\ops-skills\\INDEX.md";
+  assert.equal(isIndexRead("read", { file_path: idx }, idx), true);
+  assert.equal(isIndexRead("read", { file_path: "D:/software/ToolsDev/ops-skills/INDEX.md" }, idx), true);
+  assert.equal(isIndexRead("read_file", { path: idx }, idx), true);
+  assert.equal(isIndexRead("read", { file_path: "D:/x/notes.md" }, idx), false);
+  assert.equal(isIndexRead("write", { file_path: idx }, idx), false);
+  assert.equal(isIndexRead("read", { uris: ["viking://user/default/skills/ops-check/SKILL.md"] }, idx), false);
+});
+
+test("硬拦截：拒绝理由包含索引路径与版本", () => {
+  const r = denyReason("D:/x/INDEX.md", "17");
+  assert.ok(r.includes("D:/x/INDEX.md"));
+  assert.ok(r.includes("v17"));
+  assert.ok(r.includes("read"));
 });

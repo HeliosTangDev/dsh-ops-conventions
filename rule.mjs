@@ -89,6 +89,7 @@ export function reminderText(version, indexPath) {
   return (
     `[操作约定 v${version}｜强制] 要求不是建议：动手前必须 read ${indexPath} 并执行对应清单` +
     "（ops-scripts/notes/files/check/longtask/dsh），收尾按 ops-check 自检；跳过=未完成。" +
+    "收尾或进入等待时提一句「关会话，新会话先读 sessions/<卡>」。" +
     "若 skill 工具报 unknown（旧会话快照所致），直接 read 该文件即可，不要跳过。"
   );
 }
@@ -108,4 +109,46 @@ export function lastUserText(messages) {
     }
   }
   return "";
+}
+
+// ---- 硬拦截（2026-10-19）：本会话没读 INDEX.md 前拒绝写操作 ----
+
+/** 默认拦截的写类工具；只拦文件写，只读工具与 shell 默认不拦（可配置加） */
+export const DEFAULT_BLOCKED_TOOLS = ["write", "edit", "multi_edit", "apply_patch", "notebook_edit"];
+
+/** 工具名是否在拦截名单（大小写不敏感） */
+export function isBlockedTool(name, blocked = DEFAULT_BLOCKED_TOOLS) {
+  if (typeof name !== "string") return false;
+  const n = name.trim().toLowerCase();
+  return blocked.some((b) => String(b).trim().toLowerCase() === n);
+}
+
+function collectStrings(value, out = []) {
+  if (typeof value === "string") out.push(value);
+  else if (Array.isArray(value)) for (const v of value) collectStrings(v, out);
+  else if (value && typeof value === "object") for (const k of Object.keys(value)) collectStrings(value[k], out);
+  return out;
+}
+
+const READ_TOOL = /^read(?:[_ -]?(?:file|text))?$/i;
+
+/** 这次调用是不是在读 INDEX.md（read 类工具 + 参数里出现索引路径） */
+export function isIndexRead(name, args, indexPath) {
+  if (!READ_TOOL.test(String(name ?? ""))) return false;
+  const target = String(indexPath ?? "").replace(/\\/g, "/").toLowerCase();
+  for (const raw of collectStrings(args)) {
+    const s = String(raw).replace(/\\/g, "/").toLowerCase();
+    if (target && s.includes(target)) return true;
+    if (/(^|\/)index\.md$/.test(s) && (s.includes("ops-skills") || s.includes("ops-conventions"))) return true;
+  }
+  return false;
+}
+
+/** 硬拦截时回给模型的拒绝理由（要能直接照做） */
+export function denyReason(indexPath, version) {
+  const v = version ? ` v${version}` : "";
+  return (
+    `[操作约定${v}｜硬拦截] 本会话还没 read 约定索引 ${indexPath}。` +
+    "先 read 该文件并执行对应清单（ops-scripts/notes/files/check/longtask/dsh），再重试本次写操作；跳过=未完成。"
+  );
 }

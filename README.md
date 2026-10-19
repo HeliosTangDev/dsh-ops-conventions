@@ -8,6 +8,7 @@
 - **同一会话同版本只注入一次**：不刷屏。
 - **约定版本变化自动再提醒**：改 `VERSION` 后，下一次操作轮会重新注入。
 - **注入日志**：每次注入记一行（含选中的约定目录、索引是否存在），生效与否可核对。
+- **硬拦截（默认开）**：操作类轮次里，本会话还没 `read` 过 `INDEX.md` 时，`write`/`edit` 等写类工具会被直接拒绝，并提示先读索引；读过后本会话放行。闲聊轮次不拦；shell 默认不拦（可配置）。
 - **零配置可用**：包内自带 `skills/` 示例清单；也可以指向你自己的目录，或 OpenViking 里存的那份。
 
 ## 为什么会有这个插件
@@ -18,7 +19,7 @@
 - 但真正干活时，模型并不会稳定地主动去读它们——**约定记了，干活时不提就不用**，等于白记；
 - 靠提示词或 `AGENTS.md` 也不稳：要么每轮全量注入太费 token，要么模型想起来才看。
 
-于是和 AI 助手一起做了这个小插件：每轮判断「这句话像不像要动手」，像就注入一条极短的门铃（入口清单路径 + 版本号），其余情况零成本。
+于是和 AI 助手一起做了这个小插件：每轮判断「这句话像不像要动手」，像就注入一条极短的门铃（入口清单路径 + 版本号），其余情况零成本。后来发现「注入了也可能不执行」，就补了硬拦截：没读索引前，写操作直接过不去。
 
 **关于代码**：需求、取舍、验证由作者决定；具体实现是与 AI 助手协作完成的。
 
@@ -51,15 +52,17 @@ node install.mjs /path/to/profile --uninstall   # 卸载
 
 ### 装完
 
-- **热重载**：DSH 插件页 → 找到 `dsh-ops-conventions` → 关掉再打开（不用重启）。
-- 或重启 DeepSeek Harness。
+- **热重载**：DSH 插件页 → 找到 `dsh-ops-conventions` → 关掉再打开（改 `skills/` 或配置时不用重启）。
+- 改的是**代码**（`index.mjs` / `rule.mjs`）时，关掉再打开不保证重新 import，**重启 DeepSeek Harness** 最稳。
 
 ## 配置
 
 | 配置项 | 环境变量 | 默认 | 说明 |
 |---|---|---|---|
 | `skillsDir` | `DSH_OPS_CONVENTIONS_DIR` | 包内 `skills/` | 约定目录，需含 `INDEX.md`；`VERSION` 可有可无 |
-| `logFile` | `DSH_OPS_CONVENTIONS_LOG` | `~/.dsh/ops-conventions/ops-conventions.log` | 注入日志 |
+| `logFile` | `DSH_OPS_CONVENTIONS_LOG` | `~/.dsh/ops-conventions/ops-conventions.log` | 注入 / 拦截日志 |
+| `enforce` | — | `true` | 是否启用硬拦截；`false` = 只注入门铃 |
+| `blockedTools` | — | `write` `edit` `multi_edit` `apply_patch` `notebook_edit` | 拦截的写类工具名；要连 shell 一起拦就自行加 `bash` / `pwsh` |
 
 解析顺序（会**逐个检查目录里真的有 `INDEX.md`**，取第一个有效的）：
 
@@ -76,6 +79,8 @@ node install.mjs /path/to/profile --uninstall   # 卸载
   name: "dsh-ops-conventions"
   config:
     skillsDir: "D:/my-conventions/skills"
+    enforce: true
+    # blockedTools: ["write", "edit", "bash"]
 ```
 
 ## 约定目录结构
@@ -94,8 +99,10 @@ skills/
 
 - 监听 `agent/pre-step`（waterfall），在模型调用前判断最后一条用户消息像不像"要动手"（工具词 或 动作词+对象词）。
 - 命中且该会话该版本未注入过 → 追加一条 `instructions` 来源的消息。
+- **硬拦截**监听 `tools/pre-execute`（waterfall）：当轮用户消息像要动手、且本会话还没**成功** `read` 过 `INDEX.md` 时，对写类工具返回 `deny`（理由里带索引绝对路径），模型照做后重试即可通过；`tools/result` 观察成功的 INDEX 读取后放行。
+- 钩子自身异常一律 **fail-open**（放行）并写日志；`skillsDir` 里没有 `INDEX.md` 时不拦。
 - 任何异常都吞掉，不影响正常对话；多会话各自独立判断。
-- 插件页"关掉再打开"即可热重载，不必重启 harness。
+- 日志里可核对：`inject vN`、`guard deny`、`guard index-read`、`guard loaded enforce=...`。
 
 ## 常见问题
 
@@ -107,6 +114,9 @@ A：`package.json` 缺 `dsh.bundle.patch`。本包已带；如果你自己改了
 
 **Q：模型说 `skill xxx is unknown`？**
 A：那是会话启动时的技能目录快照导致的，与插件无关。直接用 `read` 读注入里给的那个 `INDEX.md` 路径即可。
+
+**Q：写文件被拒绝，理由是「硬拦截」？**
+A：本会话还没 `read` 过 `INDEX.md`。按理由里给的路径读一次（并执行对应清单），再重试原操作即可；不想要这个行为，把配置 `enforce` 设为 `false`。
 
 **Q：注入的提醒会显示在对话里？**
 A：会，作为一条来源为插件的消息。长度约 70 token，一个会话只出现一次（版本变了再一次）。
