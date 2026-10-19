@@ -72,9 +72,25 @@ console.log("已更新 package.json");
 sh("git", ["add", pkgPath]);
 sh("git", ["commit", "-m", `chore(release): v${next}`]);
 sh("git", ["tag", "-a", `v${next}`, "-m", `v${next}`]);
-sh("git", ["push", "origin", "main"]);
-sh("git", ["push", "origin", `v${next}`]);
+
+// push main 失败：回滚本次 bump（未推送），避免重跑时再 bump 一次
+const mainPush = spawnSync("git", ["push", "origin", "main"], { encoding: "utf8" });
+if (mainPush.status !== 0) {
+  console.error(`\n[失败] git push origin main\n${mainPush.stdout ?? ""}${mainPush.stderr ?? ""}`);
+  sh("git", ["reset", "--hard", "HEAD~1"]);
+  sh("git", ["tag", "-d", `v${next}`]);
+  console.error("\n已回滚本次 bump（未推送）。修好网络后重跑本命令。");
+  process.exit(1);
+}
+
+// push tag 失败：main 已在远端，不要重跑（会再 bump），只补推 tag
+const tagPush = spawnSync("git", ["push", "origin", `v${next}`], { encoding: "utf8" });
+if (tagPush.status !== 0) {
+  console.error(`\n[失败] main 已推，tag 未推\n${tagPush.stdout ?? ""}${tagPush.stderr ?? ""}`);
+  console.error(`不要重跑（会再 bump）；网络恢复后只补推 tag：git push origin v${next}`);
+  process.exit(1);
+}
 console.log(`\n已推送 tag v${next} —— CI 会自动打包并建 Release（约 1-2 分钟）。`);
-console.log(`\n市场 YAML 要改的一行（tarball 指向新版本）：`);
-console.log(`tarball: https://github.com/HeliosTangDev/dsh-ops-conventions/releases/download/v${next}/dsh-ops-conventions-${next}.tgz`);
-console.log(`\n到 https://github.com/HeliosTangDev/dsh-ops-conventions/releases 确认附件已挂上，再改市场仓库那一行。`);
+console.log(`\n市场 YAML 用固定名 latest 链接，不需要改：`);
+console.log(`tarball: https://github.com/HeliosTangDev/dsh-ops-conventions/releases/latest/download/dsh-ops-conventions.tgz`);
+console.log(`\n到 https://github.com/HeliosTangDev/dsh-ops-conventions/releases 确认附件已挂上（版本名 + 固定名两个）。`);
