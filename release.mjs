@@ -83,6 +83,17 @@ if (spawnSync("git", ["rev-parse", "-q", "--verify", `refs/tags/${curTag}`]).sta
   process.exit(1);
 }
 
+// 文档提醒：Release notes 由 commit 自动生成，质量取决于 CHANGELOG/commit；README 不会自动改
+try {
+  const cl = readFileSync("CHANGELOG.md", "utf8");
+  if (!cl.includes(`## ${next}`)) {
+    console.warn(`[提醒] CHANGELOG.md 没有 "## ${next}" 段：Release notes 只会是 commit 标题。`);
+    console.warn("        建议先补 CHANGELOG（行为变化），README 的「它做什么」按需同步。");
+  }
+} catch {
+  /* 没有 CHANGELOG 就不提醒 */
+}
+
 // push 卡住时按 Ctrl+C：只要 bump 已提交、还没推完，就回滚，避免下次重跑再 bump
 let bumpCommitted = false;
 let pushDone = false;
