@@ -35,6 +35,9 @@ jobs:
       - name: Pack
         run: npm pack
 
+      - name: Add stable-name asset for latest/download links
+        run: cp dsh-ops-conventions-*.tgz dsh-ops-conventions.tgz
+
       - name: Verify packed package.json has no BOM
         run: |
           set -euo pipefail
@@ -58,6 +61,7 @@ jobs:
           set -euo pipefail
           gh release create "$GITHUB_REF_NAME" \
             dsh-ops-conventions-*.tgz \
+            dsh-ops-conventions.tgz \
             --title "$GITHUB_REF_NAME" \
             --generate-notes \
             --verify-tag
