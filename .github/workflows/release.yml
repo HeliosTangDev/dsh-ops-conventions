@@ -21,11 +21,28 @@ jobs:
         with:
           node-version: 22
 
+      - name: Reject BOM in release files
+        run: |
+          set -euo pipefail
+          if LC_ALL=C grep -rIl $'\xEF\xBB\xBF' --include='*.json' --include='*.yml' --include='*.mjs' --include='*.md' .; then
+            echo "::error::BOM found in the files above; DSH rejects package.json with a BOM"
+            exit 1
+          fi
+
       - name: Test
         run: npm test
 
       - name: Pack
         run: npm pack
+
+      - name: Verify packed package.json has no BOM
+        run: |
+          set -euo pipefail
+          first=$(tar -xzOf dsh-ops-conventions-*.tgz package/package.json | head -c 1 | od -An -tx1 | tr -d ' \n')
+          if [ "$first" != "7b" ]; then
+            echo "::error::package/package.json does not start with '{' (BOM? first byte=$first)"
+            exit 1
+          fi
 
       - name: Verify asset matches tag version
         run: |
