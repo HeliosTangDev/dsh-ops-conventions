@@ -25,6 +25,8 @@ test("触发判断：操作类句子命中", () => {
     "这个月 dsh 插件有更新吗，升级一下",
     "跑批任务中断了怎么恢复",
     "把 english/quiz.mp4 移到 _media",
+    "帮我改一下 index.mjs 的文案",
+    "把配置里的路径换成 D:/x",
   ]) {
     assert.equal(shouldInject(s), true, s);
   }

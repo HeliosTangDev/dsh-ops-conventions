@@ -57,16 +57,17 @@ const TOOL_WORDS =
 
 // 动作词 + 对象词：同时出现才视为"要动手"（避免闲聊也提醒）
 const VERBS =
-  /(写|改|修改|改成|新建|创建|删|移动|移到|移入|移出|改名|重命名|整理|清理|归档|备份|恢复|回滚|安装|升级|卸载|跑|启动|重启|验证|自检|检查|生成|转换|导出|导入|同步|替换|覆盖)/;
+  /(写|改|修改|改成|换成|新建|创建|删|移动|移到|移入|移出|改名|重命名|整理|清理|归档|备份|恢复|回滚|安装|升级|卸载|跑|启动|重启|验证|自检|检查|生成|转换|导出|导入|同步|替换|覆盖)/;
 const OBJECTS =
-  /(脚本|文件|文件夹|目录|笔记|文档|章节|索引|导图|术语|任务|插件|配置|备份|图片|pdf|视频|mp4|mkv|mp3|wav|zip|压缩包|word|excel|表格|记忆|技能)/i;
+  /(脚本|文件|文件夹|目录|笔记|文档|章节|索引|导图|术语|任务|插件|配置|备份|图片|pdf|视频|mp4|mkv|mp3|wav|zip|压缩包|word|excel|表格|记忆|技能|代码|源码|函数|变量|文案|注释|逻辑|接口|模块|方法|参数|类名|文件名|路径)/i;
+const FILE_OBJECT = /\.(mjs|js|ts|jsx|tsx|json|md|yml|yaml|py|ps1|cmd|bat|sh|css|html|toml|ini)\b/i;
 
 /** 这句话像不像"要动手做操作" */
 export function shouldInject(text) {
   if (!text) return false;
   const t = String(text);
   if (TOOL_WORDS.test(t)) return true;
-  return VERBS.test(t) && OBJECTS.test(t);
+  return VERBS.test(t) && (OBJECTS.test(t) || FILE_OBJECT.test(t));
 }
 
 /** 读约定版本号；支持 VERSION / VERSION.txt / version.json；读不到就用 1 */
