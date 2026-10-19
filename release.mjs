@@ -7,6 +7,8 @@
  *   node release.mjs minor     # 0.2.1 → 0.3.0（加功能）
  *   node release.mjs major     # 0.2.1 → 1.0.0
  *   node release.mjs patch --dry-run
+ *   node release.mjs patch --prepare   # 只 bump+commit+tag，不推送（网络差时用）
+ *   node release.mjs --push-only       # 把当前版本的 main 与 tag 推上去（重试推送用）
  *
  * 原则：日常改动只 commit/push，不发版；只有"要让别人装"的时候才跑这条命令。
  */
@@ -15,6 +17,8 @@ import { spawnSync } from "node:child_process";
 
 const args = process.argv.slice(2);
 const dryRun = args.includes("--dry-run");
+const prepareOnly = args.includes("--prepare") || args.includes("--no-push");
+const pushOnly = args.includes("--push-only");
 const bump = args.find((a) => ["patch", "minor", "major"].includes(a)) ?? "patch";
 
 function sh(cmd, cmdArgs, opts = {}) {
@@ -26,9 +30,38 @@ function sh(cmd, cmdArgs, opts = {}) {
   return (r.stdout ?? "").trim();
 }
 
+// 推送统一 120 秒超时，避免网络差时无限卡住
+function pushRef(ref) {
+  return spawnSync("git", ["push", "origin", ref], { encoding: "utf8", timeout: 120000 });
+}
+function reportPush(r, what) {
+  console.error(`\n[失败] ${what}\n${r.stdout ?? ""}${r.stderr ?? ""}`);
+}
+
 const pkgPath = "package.json";
 const raw = readFileSync(pkgPath, "utf8");
 const pkg = JSON.parse(raw);
+
+// --push-only：只重试推送，不 bump（网络差导致上次没推完时用）
+if (pushOnly) {
+  const v = pkg.version;
+  console.log(`push-only：推送 main 与 tag v${v}`);
+  const m = pushRef("main");
+  if (m.status !== 0) {
+    reportPush(m, "git push origin main");
+    console.error("网络恢复后重跑本命令即可（不会 bump）。");
+    process.exit(1);
+  }
+  const t = pushRef(`v${v}`);
+  if (t.status !== 0) {
+    reportPush(t, `git push origin v${v}`);
+    console.error(`main 已推；网络恢复后只补推 tag：git push origin v${v}`);
+    process.exit(1);
+  }
+  console.log(`已推送 v${v}，CI 约 1-2 分钟出包。`);
+  process.exit(0);
+}
+
 const [maj, min, pat] = pkg.version.split(".").map(Number);
 const next =
   bump === "major" ? `${maj + 1}.0.0` :
@@ -39,6 +72,15 @@ console.log(`当前版本 ${pkg.version} → 新版本 ${next}（${bump}）`);
 if (dryRun) {
   console.log("\n[dry-run] 将执行：\n  1) 改 package.json version\n  2) git add + commit\n  3) git tag v" + next + "\n  4) git push origin main 和 tag\n  5) CI 会自动 npm pack + 建 Release + 传 tgz\n");
   process.exit(0);
+}
+
+// 防重复 bump：当前版本的 tag 已存在，说明上次可能没推完
+const curTag = `v${pkg.version}`;
+if (spawnSync("git", ["rev-parse", "-q", "--verify", `refs/tags/${curTag}`]).status === 0) {
+  console.error(`[拒绝] 当前版本 ${pkg.version} 的 tag ${curTag} 已存在（很可能上次发版没推完）。`);
+  console.error("不要重跑 bump。推送已有版本：node release.mjs --push-only");
+  console.error(`或：git push origin main && git push origin ${curTag}`);
+  process.exit(1);
 }
 
 // push 卡住时按 Ctrl+C：只要 bump 已提交、还没推完，就回滚，避免下次重跑再 bump
@@ -91,10 +133,17 @@ sh("git", ["commit", "-m", `chore(release): v${next}`]);
 sh("git", ["tag", "-a", `v${next}`, "-m", `v${next}`]);
 bumpCommitted = true;
 
+if (prepareOnly) {
+  console.log(`\n已本地准备好 v${next}（提交 + tag），未推送。`);
+  console.log(`网络好时执行：git push origin main && git push origin v${next}`);
+  console.log("或：node release.mjs --push-only");
+  process.exit(0);
+}
+
 // push main 失败：回滚本次 bump（未推送），避免重跑时再 bump 一次
-const mainPush = spawnSync("git", ["push", "origin", "main"], { encoding: "utf8", timeout: 120000 });
+const mainPush = pushRef("main");
 if (mainPush.status !== 0) {
-  console.error(`\n[失败] git push origin main\n${mainPush.stdout ?? ""}${mainPush.stderr ?? ""}`);
+  reportPush(mainPush, "git push origin main");
   sh("git", ["reset", "--hard", "HEAD~1"]);
   sh("git", ["tag", "-d", `v${next}`]);
   console.error("\n已回滚本次 bump（未推送）。修好网络后重跑本命令。");
@@ -102,10 +151,11 @@ if (mainPush.status !== 0) {
 }
 
 // push tag 失败：main 已在远端，不要重跑（会再 bump），只补推 tag
-const tagPush = spawnSync("git", ["push", "origin", `v${next}`], { encoding: "utf8", timeout: 120000 });
+const tagPush = pushRef(`v${next}`);
 if (tagPush.status !== 0) {
-  console.error(`\n[失败] main 已推，tag 未推\n${tagPush.stdout ?? ""}${tagPush.stderr ?? ""}`);
+  reportPush(tagPush, `git push origin v${next}`);
   console.error(`不要重跑（会再 bump）；网络恢复后只补推 tag：git push origin v${next}`);
+  console.error("或：node release.mjs --push-only");
   process.exit(1);
 }
 pushDone = true;
