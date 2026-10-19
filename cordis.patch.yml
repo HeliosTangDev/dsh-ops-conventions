@@ -1,5 +1,3 @@
 - insert:
     - id: dsh-ops-conventions
       name: 'dsh-ops-conventions'
-      config:
-        skillsDir: 'D:\software\ToolsUse\_tools\skills'
