@@ -48,6 +48,20 @@ if (dirty) {
   process.exit(1);
 }
 
+// 1.5) 发版前拒绝 BOM（DSH 解析带 BOM 的 package.json 会直接拒绝安装；
+//      本地手工 npm pack 会绕过 CI 的 BOM 检查，所以在源头也拦一道）
+function hasBom(file) {
+  const b = readFileSync(file);
+  return b.length >= 3 && b[0] === 0xef && b[1] === 0xbb && b[2] === 0xbf;
+}
+const bomCheckFiles = ["package.json", "cordis.patch.yml", "index.mjs", "rule.mjs", "install.mjs"];
+const bomFiles = bomCheckFiles.filter((f) => { try { return hasBom(f); } catch { return false; } });
+if (bomFiles.length > 0) {
+  console.error("[失败] 以下文件带 UTF-8 BOM，DSH 会拒绝安装：\n  " + bomFiles.join("\n  "));
+  console.error("用 node 重写这些文件（utf8 无 BOM）后再发版。");
+  process.exit(1);
+}
+
 // 2) 改版本号（保留原缩进与换行）
 const indent = (raw.match(/^[ \t]+"/m) ?? ["  "])[0];
 pkg.version = next;
