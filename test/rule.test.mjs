@@ -59,10 +59,10 @@ test("注入文本：含版本号、索引路径与 6 行常驻约定", () => {
   const t = reminderText("8", "D:/x/INDEX.md");
   assert.ok(t.includes("v8"));
   assert.ok(t.includes("D:/x/INDEX.md"));
-  for (const s of ["待会儿做", "先给结论与入口", "备份", "哈希", "由本人拍板", "只修改工具区", "关会话", "开场先扫", "_tasks", "不许吞", "绝对路径", "不问", "推断", "权限"]) {
+  for (const s of ["待会儿做", "先给结论与入口", "备份", "哈希", "由本人拍板", "只修改工具区", "关会话", "开场先扫", "_tasks", "不许吞", "绝对路径", "不问", "推断", "权限", "A/B/C", "_secrets", "主线"]) {
     assert.ok(t.includes(s), `missing: ${s}`);
   }
-  assert.ok(t.length < 700, `too long: ${t.length}`);
+  assert.ok(t.length < 850, `too long: ${t.length}`);
 });
 
 test("路径解析：有 INDEX.md 的目录优先，其次包内 skills", () => {
