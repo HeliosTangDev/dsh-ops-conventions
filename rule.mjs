@@ -91,7 +91,8 @@ export function reminderText(version, indexPath) {
     `[操作约定 v${version}｜强制] 要求不是建议：动手前必须 read ${indexPath} 并执行对应清单` +
     "（ops-scripts/notes/files/check/longtask/dsh），收尾按 ops-check 自检，汇报只列未通过项，" +
     "再做记忆归并、_tasks 清空、归档登记。" +
-    "开场先扫 viking://user/default/memories/tasks 与 sessions，有到期/等待项先当面提醒（别等本人问）。" +
+    "开场先扫 viking://user/default/memories/tasks 与 sessions，有到期/等待项先当面提醒（别等本人问）；" +
+    "顺带看当前工作区 _tasks 有无上次残留，有就清掉或并入待办。" +
     "常驻：不说「待会儿做」（当场做完，或明说等回来再触发）；先给结论与入口，不列多方案让人挑；" +
     "改动先备份、失败可回滚，还原用哈希证明；优化收益＜成本就停，由本人拍板；" +
     "只修改工具区，系统级/提权改动交本人执行；收尾或进入等待时提一句「关会话，新会话先读 sessions/<卡>」。" +
