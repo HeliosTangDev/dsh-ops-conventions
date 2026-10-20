@@ -1,8 +1,11 @@
-import { appendFileSync, mkdirSync, existsSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { createUserMessage } from "@deepseek-ai/dsh-llm";
 import {
   DEFAULT_BLOCKED_TOOLS,
+  compactionHintText,
+  compactionStats,
   denyReason,
   isBlockedTool,
   isIndexRead,
@@ -42,6 +45,45 @@ export function apply(ctx, config = {}) {
   const indexPath = join(skillsDir, "INDEX.md");
   const versionFile = join(skillsDir, "VERSION");
   const delivered = new Map(); // sessionId -> version（兜底）
+  const compactionSeen = new Map(); // sessionId -> 已提示过的压缩次数（无 session 对象时兜底）
+  const projectionCache = new Map(); // path -> { mtimeMs, size, stats }
+  const projectionDir =
+    config.sessionCacheDir ??
+    process.env.DSH_SESSION_CACHE_DIR ??
+    join(homedir(), ".dsh", "storages", "session_projcache", "sessions");
+
+  /** 找到本会话的投影缓存文件（session-<id>.json；id 可能是全量或前缀） */
+  function projectionPath(sid) {
+    if (!sid || sid === "default") return null;
+    const exact = join(projectionDir, `session-${sid}.json`);
+    if (existsSyncSafe(exact)) return exact;
+    try {
+      const hit = readdirSync(projectionDir).find(
+        (f) => f.startsWith(`session-${sid}`) && f.endsWith(".json"),
+      );
+      if (hit) return join(projectionDir, hit);
+    } catch {
+      /* 目录不存在或读不了：安静降级 */
+    }
+    return null;
+  }
+
+  /** 读压缩统计（按 mtime+size 缓存，避免每轮都解析大 JSON） */
+  function readCompactionStats(sid) {
+    try {
+      const path = projectionPath(sid);
+      if (!path) return null;
+      const st = statSync(path);
+      const cached = projectionCache.get(path);
+      if (cached && cached.mtimeMs === st.mtimeMs && cached.size === st.size) return cached.stats;
+      const stats = compactionStats(JSON.parse(readFileSync(path, "utf8")));
+      projectionCache.set(path, { mtimeMs: st.mtimeMs, size: st.size, stats });
+      return stats;
+    } catch (err) {
+      log(`compaction read error: ${err?.message ?? String(err)}`);
+      return null;
+    }
+  }
 
   const enforce = config.enforce !== false;
   const blockedTools =
@@ -70,6 +112,7 @@ export function apply(ctx, config = {}) {
   const GATE = Symbol.for("dsh.opsConventions.injectedVersion");
   const READ_INDEX = Symbol.for("dsh.opsConventions.indexRead");
   const LAST_TEXT = Symbol.for("dsh.opsConventions.lastUserText");
+  const COMPACT_SEEN = Symbol.for("dsh.opsConventions.compactionSeen");
 
   ctx.on(
     "agent/pre-step",
@@ -84,22 +127,60 @@ export function apply(ctx, config = {}) {
 
         const version = readVersion(versionFile);
         const sid = agent?.session?.id ?? agent?.id ?? "default";
-        if (sess && sess[GATE] === version) return decision;
-        if (!sess && delivered.get(sid) === version) return decision;
-        if (sess) sess[GATE] = version;
-        delivered.set(sid, version);
-        const text2 = reminderText(version, indexPath);
-        log(`inject v${version} session=${sid} chars=${text2.length}`);
+        const gateHit = sess ? sess[GATE] === version : delivered.get(sid) === version;
+        let messages = decision.messages;
 
-        const msg = createUserMessage({
-          content: [{ type: "text", text: text2 }],
-          source: {
-            kind: "plugin:dsh-ops-conventions",
-            plugin: "dsh-ops-conventions",
-            form: "instructions",
-          },
-        });
-        return { kind: "enter", messages: [...decision.messages, msg] };
+        if (!gateHit) {
+          if (sess) sess[GATE] = version;
+          delivered.set(sid, version);
+          const text2 = reminderText(version, indexPath);
+          log(`inject v${version} session=${sid} chars=${text2.length}`);
+          messages = [
+            ...messages,
+            createUserMessage({
+              content: [{ type: "text", text: text2 }],
+              source: {
+                kind: "plugin:dsh-ops-conventions",
+                plugin: "dsh-ops-conventions",
+                form: "instructions",
+              },
+            }),
+          ];
+        }
+
+        // 会话被自动压缩过 → 次数增加时注入一次提示。
+        // 这是机械触发器：不依赖模型自己感知"会话长了"，压缩事件是 DSH 自己记的。
+        // 首次看到某个会话时只记基线、不提示：旧会话里的历史压缩不是"刚发生"。
+        const stats = readCompactionStats(sid);
+        if (stats) {
+          const seen = sess ? sess[COMPACT_SEEN] : compactionSeen.get(sid);
+          if (seen === undefined) {
+            if (sess) sess[COMPACT_SEEN] = stats.count;
+            else compactionSeen.set(sid, stats.count);
+            if (stats.count > 0) log(`compaction baseline session=${sid} count=${stats.count}`);
+          } else if (stats.count > seen) {
+            if (sess) sess[COMPACT_SEEN] = stats.count;
+            else compactionSeen.set(sid, stats.count);
+            const hint = compactionHintText(stats);
+            if (hint) {
+              log(`compaction hint session=${sid} count=${stats.count}`);
+              messages = [
+                ...messages,
+                createUserMessage({
+                  content: [{ type: "text", text: hint }],
+                  source: {
+                    kind: "plugin:dsh-ops-conventions",
+                    plugin: "dsh-ops-conventions",
+                    form: "instructions",
+                  },
+                }),
+              ];
+            }
+          }
+        }
+
+        if (messages === decision.messages) return decision;
+        return { kind: "enter", messages };
       } catch (err) {
         log(`error: ${err?.message ?? String(err)}`);
         return decision; // 任何意外都不影响正常对话

@@ -1,6 +1,17 @@
 # Changelog
 
-## 0.3.2（未发布）
+## 0.4.0（未发布）
+
+### 新增
+
+- **会话压缩提示**（机械触发，不靠模型自己感觉"会话长了"）：读 DSH 会话投影缓存 `~/.dsh/storages/session_projcache/sessions/session-<id>.json` 的 `contextTimeline.val.events`，数 `kind === "compaction"` 的条目；次数增加时注入一句话，提示「若主线已收尾可考虑换会话」。只读数据、按 `mtime+size` 缓存；从未压缩过则一个字不注入。新增 `compactionStats` / `compactionHintText` 与 `test/compaction.test.mjs`（真实会话样本：2 次压缩）。
+
+### 改动
+
+- 门铃常驻约定把「收尾或进入等待时提一句关会话」改为「换不换会话由本人决定，只有收到『会话压缩提示』时按提示判一次」。
+- 首次看到某个会话时只记基线、不提示：旧会话里「以前压缩过」的次数不会被当成刚发生；之后 count 增加才注入。
+
+## 0.3.2 — 2026-10-20
 
 ### 改动
 

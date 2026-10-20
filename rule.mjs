@@ -1,4 +1,4 @@
-import { readFileSync, existsSync } from "node:fs";
+﻿import { readFileSync, existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -103,7 +103,7 @@ export function reminderText(version, indexPath) {
     "工作区外写先申请一次放宽权限，不推给本人手动做。" +
     "常驻：不说「待会儿做」（当场做完，或明说等回来再触发）；先给结论与入口，不列多方案让人挑；" +
     "改动先备份、失败可回滚，还原用哈希证明；优化收益＜成本就停，由本人拍板；" +
-    "只修改工具区，系统级/提权改动交本人执行；收尾或进入等待时提一句「关会话，新会话先读 sessions/<卡>」。" +
+    "只修改工具区，系统级/提权改动交本人执行；换不换会话由本人决定，只有收到「会话压缩提示」时按提示判一次。" +
     "若 skill 工具报 unknown（旧会话快照所致），直接 read 该文件即可，不要跳过。"
   );
 }
@@ -164,5 +164,44 @@ export function denyReason(indexPath, version) {
   return (
     `[操作约定${v}｜硬拦截] 本会话还没 read 约定索引 ${indexPath}。` +
     "先 read 该文件并执行对应清单（ops-scripts/notes/files/check/longtask/dsh），再重试本次写操作；跳过=未完成。"
+  );
+}
+
+/**
+ * 数会话的「上下文压缩」次数。
+ * 数据源：DSH 会话投影缓存 ~/.dsh/storages/session_projcache/sessions/session-<id>.json。
+ * 口径：contextTimeline.val.events 里 kind === "compaction" 的条目才是压缩次数；
+ * archived 只是「被压缩掉的历史条目」，不是次数（400 条归档可能只对应 1 次压缩）。
+ */
+export function compactionStats(projection) {
+  const rows = projection?.record?.rows ?? {};
+  const timeline = rows.contextTimeline?.val ?? {};
+  const events = Array.isArray(timeline.events) ? timeline.events : [];
+  const comps = events.filter((e) => e && e.kind === "compaction");
+  const pressure = rows.contextPressure?.val ?? {};
+  const window = timeline.contextWindow ?? pressure.contextWindow ?? null;
+  const used = pressure.pressureTokens ?? null;
+  return {
+    count: comps.length,
+    last: comps.length > 0 ? comps[comps.length - 1] : null,
+    pressureTokens: used,
+    contextWindow: window,
+    percent: used !== null && window ? Math.round((used / window) * 100) : null,
+  };
+}
+
+/** 压缩次数增加时注入的一句话；没有压缩过返回 null（此时一个字都不注入） */
+export function compactionHintText(stats) {
+  const s = stats ?? {};
+  const n = Number(s.count ?? 0);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  const usage =
+    s.percent !== null && s.percent !== undefined
+      ? `（最近一次请求约 ${s.pressureTokens} tokens，占窗口 ${s.percent}%）`
+      : "";
+  return (
+    `[会话压缩提示] 本会话上下文已被自动压缩 ${n} 次${usage}。` +
+    "压缩说明上下文确实被裁过：若这条主线已收尾或进入等待，可在回复末尾提一句换会话（写清新会话先读哪张卡）；" +
+    "若还在同一主线且状态没外化，就继续，不要为压缩而中断。"
   );
 }
