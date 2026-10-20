@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.2 — 2026-10-20
+
+### 修复
+
+- 去掉 `rule.mjs` 开头的 UTF-8 BOM：v0.4.1 的 Release CI 在「Reject BOM in release files」步骤失败（`run 39415392296`），因此 0.4.1 只有 tag、没有 Release。全仓库复查后仅此一处 BOM，其余文件干净。
+
 ## 0.4.1 — 2026-10-20
 
 > 0.4.0 的提交已进 main 但从未打 tag / 出 Release（`--push-only` 只推了 main），两批改动合并到本版一次发布。
