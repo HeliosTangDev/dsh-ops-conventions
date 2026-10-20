@@ -74,13 +74,22 @@ if (dryRun) {
   process.exit(0);
 }
 
-// 防重复 bump：当前版本的 tag 已存在，说明上次可能没推完
+// 防重复 bump：当前版本的 tag 已存在时，只有「远端也已有该 tag」才允许继续 bump（说明上次发版完整）
 const curTag = `v${pkg.version}`;
 if (spawnSync("git", ["rev-parse", "-q", "--verify", `refs/tags/${curTag}`]).status === 0) {
-  console.error(`[拒绝] 当前版本 ${pkg.version} 的 tag ${curTag} 已存在（很可能上次发版没推完）。`);
-  console.error("不要重跑 bump。推送已有版本：node release.mjs --push-only");
-  console.error(`或：git push origin main && git push origin ${curTag}`);
-  process.exit(1);
+  const remote = spawnSync("git", ["ls-remote", "--tags", "origin", `refs/tags/${curTag}`], { encoding: "utf8", timeout: 30000 });
+  const pushed = remote.status === 0 && String(remote.stdout || "").trim().length > 0;
+  if (!pushed) {
+    if (remote.status !== 0) {
+      console.error(`[拒绝] 无法确认远端 tag ${curTag}（网络或凭证问题）。`);
+      console.error(`先确认：git ls-remote --tags origin refs/tags/${curTag}`);
+    } else {
+      console.error(`[拒绝] 当前版本 ${pkg.version} 的 tag ${curTag} 本地有、远端没有（上次没推完）。`);
+      console.error("不要重跑 bump。先推：node release.mjs --push-only");
+    }
+    process.exit(1);
+  }
+  console.log(`[继续] 远端已有 tag ${curTag}（上次发版完整），继续 bump 到 ${next}`);
 }
 
 // 文档提醒：Release notes 由 commit 自动生成，质量取决于 CHANGELOG/commit；README 不会自动改
