@@ -86,9 +86,10 @@ export function readVersion(file) {
 }
 
 /** 注入内容（强制措辞；含 6 行常驻约定，避免依赖会被抽取重写的 profile 段） */
-export function reminderText(version, indexPath) {
+export function reminderText(version, indexPath, todoPath) {
+  const todo = todoPath ? `；并 read 待办镜像 ${todoPath}（读到它就去 list tasks/ 与 sessions，别只看本会话）` : "";
   return (
-    `[操作约定 v${version}｜强制] 动手前必须 read ${indexPath} 并执行对应清单` +
+    `[操作约定 v${version}｜强制] 动手前必须 read ${indexPath} 并执行对应清单` + todo +
     "（ops-scripts/notes/files/check/longtask/dsh）；收尾按 ops-check：记忆归并、清 _tasks、归档登记。" +
     "开场先扫 tasks 与 sessions，有到期/等待项当面提醒；顺带清工作区 _tasks 残留。" +
     "失败分类报原文，不许吞或粉饰；删/移/覆盖前确认绝对路径，先复制成功再删旧。" +
@@ -155,12 +156,29 @@ export function isIndexRead(name, args, indexPath) {
   return false;
 }
 
+/** 这次调用是不是在读待办镜像 OPEN.md（read 类工具 + 参数里出现该路径） */
+export function isTodoRead(name, args, todoPath) {
+  if (!READ_TOOL.test(String(name ?? ""))) return false;
+  const target = String(todoPath ?? "").replace(/\\/g, "/").toLowerCase();
+  if (!target) return false;
+  for (const raw of collectStrings(args)) {
+    const s = String(raw).replace(/\\/g, "/").toLowerCase();
+    if (target && s.includes(target)) return true;
+    if (/(^|\/)open\.md$/.test(s) && s.includes("tasks")) return true;
+  }
+  return false;
+}
+
 /** 硬拦截时回给模型的拒绝理由（要能直接照做） */
-export function denyReason(indexPath, version) {
+export function denyReason(indexPath, version, todoPath, todoRead) {
   const v = version ? ` v${version}` : "";
+  const parts = [`read 约定索引 ${indexPath}`];
+  if (todoPath && !todoRead) {
+    parts.push(`read 待办镜像 ${todoPath}（唯一来源 viking://user/default/memories/tasks/ 与 sessions/，不读就不知道别的会话还挂着什么）`);
+  }
   return (
-    `[操作约定${v}｜硬拦截] 本会话还没 read 约定索引 ${indexPath}。` +
-    "先 read 该文件并执行对应清单（ops-scripts/notes/files/check/longtask/dsh），再重试本次写操作；跳过=未完成。"
+    `[操作约定${v}｜硬拦截] 本会话还没 ` + parts.join("，也没 ") + "。做完后" +
+    "执行对应清单（ops-scripts/notes/files/check/longtask/dsh），再重试本次写操作；跳过=未完成。"
   );
 }
 

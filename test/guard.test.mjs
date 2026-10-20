@@ -9,12 +9,17 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 const srcDir = fileURLToPath(new URL("..", import.meta.url));
 
-async function loadPlugin() {
+async function loadPlugin(opts = {}) {
   const dir = mkdtempSync(join(tmpdir(), "opsconv-guard-"));
   const skills = join(dir, "skills");
   mkdirSync(skills, { recursive: true });
   writeFileSync(join(skills, "INDEX.md"), "# index\n", "utf8");
   writeFileSync(join(skills, "VERSION"), "17\n", "utf8");
+  // 0.5.0：可选生成待办镜像 <dir>\tasks\OPEN.md（约定目录的上一级）
+  if (opts.withTodo) {
+    mkdirSync(join(dir, "tasks"), { recursive: true });
+    writeFileSync(join(dir, "tasks", "OPEN.md"), "# 待办镜像\n", "utf8");
+  }
   writeFileSync(join(dir, "stub.mjs"), "export function createUserMessage(p){ return { role: 'user', ...p }; }\n");
   const ruleHref = pathToFileURL(join(srcDir, "rule.mjs")).href;
   const code = readFileSync(join(srcDir, "index.mjs"), "utf8")
@@ -28,7 +33,12 @@ async function loadPlugin() {
     { logger: { info() {} }, on(name, fn) { handlers.set(name, fn); } },
     { skillsDir: skills, logFile: join(dir, "log.txt") },
   );
-  return { handlers, indexPath: join(skills, "INDEX.md"), versionFile: join(skills, "VERSION") };
+  return {
+    handlers,
+    indexPath: join(skills, "INDEX.md"),
+    versionFile: join(skills, "VERSION"),
+    todoPath: join(dir, "tasks", "OPEN.md"),
+  };
 }
 
 function session(id) {
@@ -117,4 +127,43 @@ test("注入：下一轮即注入（含闲聊），同会话同版本只一次",
   const s2 = session("s-inj2");
   const r5 = await enterTurn(handlers, s2, "你好");
   assert.equal(r5.messages.length, 2);
+});
+
+test("硬拦截：镜像存在但未读 → 读过 INDEX 仍被拒；读了镜像才放行", async () => {
+  const { handlers, indexPath, todoPath } = await loadPlugin({ withTodo: true });
+  const s = session("s-todo");
+  await enterTurn(handlers, s, "帮我改个脚本");
+
+  // 只读 INDEX：仍应被拒，且拒绝理由点名 OPEN.md
+  handlers.get("tools/result")(
+    { name: "read", arguments: { file_path: indexPath }, agent: { session: s } },
+    {},
+  );
+  const stillDenied = await tryTool(handlers, s, "write");
+  assert.equal(stillDenied.kind, "deny");
+  assert.ok(stillDenied.reason.includes("OPEN.md"));
+
+  // 读了镜像之后放行
+  handlers.get("tools/result")(
+    { name: "read", arguments: { file_path: todoPath }, agent: { session: s } },
+    {},
+  );
+  assert.equal((await tryTool(handlers, s, "write")).kind, "allow");
+
+  // 镜像读取失败（isError）不算已读
+  const s2 = session("s-todo-fail");
+  await enterTurn(handlers, s2, "整理一下目录");
+  handlers.get("tools/result")(
+    { name: "read", arguments: { file_path: indexPath }, agent: { session: s2 } },
+    {},
+  );
+  handlers.get("tools/result")(
+    { name: "read", arguments: { file_path: todoPath }, agent: { session: s2 } },
+    { isError: true },
+  );
+  assert.equal((await tryTool(handlers, s2, "edit")).kind, "deny");
+
+  // 注入文案里应出现镜像路径
+  const r = await enterTurn(handlers, session("s-todo-inj"), "把笔记整理一下");
+  assert.ok(JSON.stringify(r.messages).includes("OPEN.md"));
 });

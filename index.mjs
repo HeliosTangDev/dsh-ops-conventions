@@ -9,6 +9,7 @@ import {
   denyReason,
   isBlockedTool,
   isIndexRead,
+  isTodoRead,
   lastUserText,
   readVersion,
   reminderText,
@@ -44,6 +45,9 @@ export function apply(ctx, config = {}) {
   const logFile = resolveLogFile(config);
   const indexPath = join(skillsDir, "INDEX.md");
   const versionFile = join(skillsDir, "VERSION");
+  // 待办镜像：<约定目录的上一级>\tasks\OPEN.md（如 D:\software\ToolsDev\tasks\OPEN.md）。
+  // 存在才参与硬拦截；不存在则只保留 INDEX 拦截，避免在没有该文件的机器上误拦。
+  const todoFile = join(dirname(skillsDir), "tasks", "OPEN.md");
   const delivered = new Map(); // sessionId -> version（兜底）
   const compactionSeen = new Map(); // sessionId -> 已提示过的压缩次数（无 session 对象时兜底）
   const projectionCache = new Map(); // path -> { mtimeMs, size, stats }
@@ -111,6 +115,7 @@ export function apply(ctx, config = {}) {
 
   const GATE = Symbol.for("dsh.opsConventions.injectedVersion");
   const READ_INDEX = Symbol.for("dsh.opsConventions.indexRead");
+  const READ_TODO = Symbol.for("dsh.opsConventions.todoMirrorRead");
   const LAST_TEXT = Symbol.for("dsh.opsConventions.lastUserText");
   const COMPACT_SEEN = Symbol.for("dsh.opsConventions.compactionSeen");
 
@@ -133,7 +138,7 @@ export function apply(ctx, config = {}) {
         if (!gateHit) {
           if (sess) sess[GATE] = version;
           delivered.set(sid, version);
-          const text2 = reminderText(version, indexPath);
+          const text2 = reminderText(version, indexPath, existsSyncSafe(todoFile) ? todoFile : null);
           log(`inject v${version} session=${sid} chars=${text2.length}`);
           messages = [
             ...messages,
@@ -196,7 +201,8 @@ export function apply(ctx, config = {}) {
       try {
         const sess = exec?.agent?.session;
         if (!sess) return next();
-        if (sess[READ_INDEX]) return next();
+        const needTodo = existsSyncSafe(todoFile) && !sess[READ_TODO];
+        if (sess[READ_INDEX] && !needTodo) return next();
         const text = sess[LAST_TEXT];
         if (typeof text !== "string" || !shouldInject(text)) return next();
         if (!enforce || !existsSyncSafe(indexPath)) return next();
@@ -204,8 +210,11 @@ export function apply(ctx, config = {}) {
 
         const version = readVersion(versionFile);
         const sid = sess.id ?? "default";
-        log(`guard deny session=${sid} tool=${exec.name} v${version}`);
-        return { kind: "deny", reason: denyReason(indexPath, version) };
+        log(`guard deny session=${sid} tool=${exec.name} v${version} needTodo=${needTodo}`);
+        return {
+          kind: "deny",
+          reason: denyReason(indexPath, version, existsSyncSafe(todoFile) ? todoFile : null, sess[READ_TODO]),
+        };
       } catch (err) {
         log(`guard error: ${err?.message ?? String(err)}`);
         return next();
@@ -214,15 +223,21 @@ export function apply(ctx, config = {}) {
     { prepend: true },
   );
 
-  // 观察成功的 read INDEX.md，给本会话记「已读」
+  // 观察成功的 read INDEX.md / tasks\OPEN.md，给本会话记「已读」
   ctx.on("tools/result", (exec, result) => {
     try {
       if (result?.isError) return;
-      if (!isIndexRead(exec?.name, exec?.arguments, indexPath)) return;
       const sess = exec?.agent?.session;
       if (!sess) return;
-      sess[READ_INDEX] = true;
-      log(`guard index-read session=${sess.id ?? "default"}`);
+      const sid = sess.id ?? "default";
+      if (isIndexRead(exec?.name, exec?.arguments, indexPath)) {
+        sess[READ_INDEX] = true;
+        log(`guard index-read session=${sid}`);
+      }
+      if (isTodoRead(exec?.name, exec?.arguments, todoFile)) {
+        sess[READ_TODO] = true;
+        log(`guard todo-read session=${sid}`);
+      }
     } catch (err) {
       log(`guard observe error: ${err?.message ?? String(err)}`);
     }

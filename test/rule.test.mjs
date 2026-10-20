@@ -10,6 +10,7 @@ import {
   denyReason,
   isBlockedTool,
   isIndexRead,
+  isTodoRead,
   shouldInject,
   readVersion,
   reminderText,
@@ -119,4 +120,33 @@ test("硬拦截：拒绝理由包含索引路径与版本", () => {
   assert.ok(r.includes("D:/x/INDEX.md"));
   assert.ok(r.includes("v17"));
   assert.ok(r.includes("read"));
+});
+
+// ---- 0.5.0：待办镜像 tasks/OPEN.md ----
+
+test("硬拦截：已读待办镜像的判定", () => {
+  const todo = "D:\\software\\ToolsDev\\tasks\\OPEN.md";
+  assert.equal(isTodoRead("read", { file_path: todo }, todo), true);
+  assert.equal(isTodoRead("read", { file_path: "D:/software/ToolsDev/tasks/OPEN.md" }, todo), true);
+  assert.equal(isTodoRead("read_file", { path: "d:/x/tasks/open.md" }, todo), true);
+  assert.equal(isTodoRead("read", { file_path: "D:/x/notes.md" }, todo), false);
+  assert.equal(isTodoRead("write", { file_path: todo }, todo), false);
+  assert.equal(isTodoRead("read", { file_path: todo }, ""), false);
+});
+
+test("硬拦截：镜像未读时拒绝理由要点名 OPEN.md", () => {
+  const todo = "D:/x/tasks/OPEN.md";
+  const notRead = denyReason("D:/x/INDEX.md", "17", todo, false);
+  assert.ok(notRead.includes(todo), "未读镜像时应点名路径");
+  const read = denyReason("D:/x/INDEX.md", "17", todo, true);
+  assert.ok(!read.includes(todo), "已读镜像后不应再点名");
+  const noMirror = denyReason("D:/x/INDEX.md", "17", null, false);
+  assert.ok(!noMirror.includes("OPEN.md"));
+});
+
+test("注入文案：给出镜像路径时才提示读它", () => {
+  const withTodo = reminderText("18", "D:/x/INDEX.md", "D:/x/tasks/OPEN.md");
+  assert.ok(withTodo.includes("D:/x/tasks/OPEN.md"));
+  const withoutTodo = reminderText("18", "D:/x/INDEX.md");
+  assert.ok(!withoutTodo.includes("待办镜像"));
 });

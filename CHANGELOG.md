@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.0 — 2026-10-20
+
+### 新增
+
+- **待办镜像硬拦**：约定目录上一级的 `tasks\OPEN.md`（如 `D:\software\ToolsDev\tasks\OPEN.md`）存在时，写类工具除了要求 `read INDEX.md`，还要求 `read` 该镜像（`isTodoRead`；日志 `guard deny … needTodo=true` / `guard todo-read`）。
+  理由：门铃原来只硬拦「read INDEX」，而「开场先扫 tasks 与 sessions」只是注入文案、无任何检测 —— 2026-10-20 就漏在这里（换会话后只写当前任务待办）。
+- 门铃文案与硬拦截的拒绝理由都会指明镜像路径；镜像不存在时自动退化为只拦 INDEX，避免在没放该文件的机器上误拦。
+
 ## 0.4.2 — 2026-10-20
 
 ### 修复
