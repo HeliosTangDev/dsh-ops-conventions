@@ -11,6 +11,7 @@ import {
   isIndexRead,
   isShellWrite,
   isTodoRead,
+  isWriteTool,
   lastUserText,
   readVersion,
   reminderText,
@@ -195,19 +196,28 @@ export function apply(ctx, config = {}) {
     { prepend: true },
   );
 
-  // 硬拦截：操作类轮次里，本会话未读 INDEX.md → 拒绝写类工具（fail-open：异常放行并记日志）
+  // 硬拦截：只要这次调用是"写类动作"，本会话未读 INDEX.md（+ 待办镜像）就拒绝（fail-open：异常放行并记日志）
   ctx.on(
     "tools/pre-execute",
     async (exec, next) => {
       try {
+        const writeAttempt = isWriteTool(exec.name, blockedTools) || isShellWrite(exec.name, exec.arguments);
+        if (!writeAttempt) return next();
         const sess = exec?.agent?.session;
-        if (!sess) return next();
+        if (!sess) {
+          log(`guard skip reason=no-session tool=${exec.name}`);
+          return next();
+        }
         const needTodo = existsSyncSafe(todoFile) && !sess[READ_TODO];
         if (sess[READ_INDEX] && !needTodo) return next();
-        const text = sess[LAST_TEXT];
-        if (typeof text !== "string" || !shouldInject(text)) return next();
-        if (!enforce || !existsSyncSafe(indexPath)) return next();
-        if (!isBlockedTool(exec.name, blockedTools) && !isShellWrite(exec.name, exec.arguments)) return next();
+        if (!enforce) {
+          log(`guard skip reason=enforce-off tool=${exec.name}`);
+          return next();
+        }
+        if (!existsSyncSafe(indexPath)) {
+          log(`guard skip reason=no-index path=${indexPath}`);
+          return next();
+        }
 
         const version = readVersion(versionFile);
         const sid = sess.id ?? "default";

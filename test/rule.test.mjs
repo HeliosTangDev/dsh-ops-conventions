@@ -11,6 +11,7 @@ import {
   isBlockedTool,
   isIndexRead,
   isShellWrite,
+  isWriteTool,
   isTodoRead,
   shouldInject,
   readVersion,
@@ -173,4 +174,21 @@ test("shell 写操作识别：pwsh 里的写命令要拦，只读命令不拦", 
     ["write", { file_path: "D:\\x\\a.txt" }],
   ];
   for (const [name, args] of readOnly) assert.equal(isShellWrite(name, args), false, `${name} ${JSON.stringify(args)}`);
+});
+test("写类工具按名字识别：内置与 MCP 写工具都算，shell/read 不算", () => {
+  const yes = ["write", "edit", "multi_edit", "apply_patch", "mcp__openviking__write", "mcp__openviking__edit",
+    "mcp__openviking__add_resource", "mcp__openviking__add_skill", "dshm_install", "dshm_upgrade", "dshm_toggle"];
+  for (const n of yes) assert.equal(isWriteTool(n), true, n);
+  const no = ["read", "pwsh", "bash", "web_search", "mcp__openviking__search", "mcp__openviking__remember", "agent_teams_status"];
+  for (const n of no) assert.equal(isWriteTool(n), false, n);
+});
+
+test("shell 里读 INDEX/OPEN.md 也算已读", () => {
+  const idx = "D:\\software\\ToolsDev\\ops-skills\\INDEX.md";
+  const todo = "D:\\software\\ToolsDev\\tasks\\OPEN.md";
+  assert.equal(isIndexRead("pwsh", { command: `Get-Content "${idx}"` }, idx), true);
+  assert.equal(isIndexRead("pwsh", { command: "Get-ChildItem D:\\x" }, idx), false);
+  assert.equal(isTodoRead("pwsh", { command: `type "${todo}"` }, todo), true);
+  assert.equal(isTodoRead("read", { file_path: todo }, todo), true);
+  assert.equal(isTodoRead("pwsh", { command: "git status" }, todo), false);
 });

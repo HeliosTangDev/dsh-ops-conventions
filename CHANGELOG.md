@@ -1,3 +1,15 @@
+## 0.5.2 — 2026-10-21
+
+### 修复（把守卫的绕过路径全部堵掉）
+
+- **动作优先于文本**：原先只有"本轮用户消息像要动手"（shouldInject）才拦 → 用户说「继续 / 那算了」时写操作**完全不拦**。现在改为：**只要是写类调用就判定**，与用户措辞无关。
+- **写类工具按名字识别**：原先只认固定名单（write/edit/multi_edit/apply_patch/notebook_edit）→ **MCP 写工具全部绕过**（mcp__openviking__write/edit/add_resource/add_skill、dshm_install/upgrade/toggle）。现在按名字模式匹配，内置与 MCP 一视同仁。
+- **shell 写操作**（0.5.1 已做）：pwsh/bash 命令串含写动词/重定向即拦。
+- **shell 读也算已读**：用 Get-Content/cat/	ype/Select-String 读 INDEX.md、OPEN.md 也置"已读"，减少"读了却被拦"的误判。
+- **放行原因可观测**：
+o-session / enforce-off / 
+o-index 三种放行都会写日志（guard skip reason=...），审计能看出守卫是否真在跑。
+- 单测 15/15 通过（新增：写类工具名 12 正例 + 7 反例；shell 读识别 5 例）。
 ## 0.5.1 — 2026-10-21
 
 ### 修复

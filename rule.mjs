@@ -135,6 +135,18 @@ export function isBlockedTool(name, blocked = DEFAULT_BLOCKED_TOOLS) {
   return blocked.some((b) => String(b).trim().toLowerCase() === n);
 }
 
+// 写类工具名模式：覆盖内置 write/edit/... 与 MCP 的 mcp__<srv>__write / __edit / __add_resource / dshm_install 等
+// 不匹配 pwsh/bash（它们走 isShellWrite 按命令串判定）
+const WRITE_TOOL_NAME =
+  /(?:^|__|[-_])(?:write|edit|multi_edit|apply_patch|notebook_edit|create_file|create_directory|delete_file|remove_file|move_file|rename_file|mkdir|append|patch|add_resource|add_skill|install|uninstall|upgrade|toggle|restart)$/i;
+
+/** 这次调用是不是"写类工具"：名单命中 或 名字符合写类模式 */
+export function isWriteTool(name, blocked = DEFAULT_BLOCKED_TOOLS) {
+  const n = String(name ?? "").trim();
+  if (!n) return false;
+  return isBlockedTool(n, blocked) || WRITE_TOOL_NAME.test(n);
+}
+
 // ---- 命令行里的写操作（shell 不在 blockedTools 里，靠命令串识别；2026-10-21 补口）----
 const SHELL_TOOL = /^(pwsh|powershell|bash|sh|shell|cmd|run_command|exec)$/i;
 
@@ -163,6 +175,17 @@ export function isShellWrite(name, args) {
   return false;
 }
 
+// shell 里读文件（用于把「用命令行读了 INDEX/OPEN.md」也算已读）
+const SHELL_READ = /\b(?:get-content|gc|cat|type|head|more|select-string)\b/i;
+
+function isShellRead(name, args) {
+  if (!SHELL_TOOL.test(String(name ?? '').trim())) return false;
+  for (const raw of collectStrings(args)) {
+    if (SHELL_READ.test(String(raw))) return true;
+  }
+  return false;
+}
+
 function collectStrings(value, out = []) {
   if (typeof value === "string") out.push(value);
   else if (Array.isArray(value)) for (const v of value) collectStrings(v, out);
@@ -174,7 +197,7 @@ const READ_TOOL = /^read(?:[_ -]?(?:file|text))?$/i;
 
 /** 这次调用是不是在读 INDEX.md（read 类工具 + 参数里出现索引路径） */
 export function isIndexRead(name, args, indexPath) {
-  if (!READ_TOOL.test(String(name ?? ""))) return false;
+  if (!READ_TOOL.test(String(name ?? "")) && !isShellRead(name, args)) return false;
   const target = String(indexPath ?? "").replace(/\\/g, "/").toLowerCase();
   for (const raw of collectStrings(args)) {
     const s = String(raw).replace(/\\/g, "/").toLowerCase();
@@ -186,7 +209,7 @@ export function isIndexRead(name, args, indexPath) {
 
 /** 这次调用是不是在读待办镜像 OPEN.md（read 类工具 + 参数里出现该路径） */
 export function isTodoRead(name, args, todoPath) {
-  if (!READ_TOOL.test(String(name ?? ""))) return false;
+  if (!READ_TOOL.test(String(name ?? "")) && !isShellRead(name, args)) return false;
   const target = String(todoPath ?? "").replace(/\\/g, "/").toLowerCase();
   if (!target) return false;
   for (const raw of collectStrings(args)) {
