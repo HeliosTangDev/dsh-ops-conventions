@@ -12,6 +12,7 @@ import {
   isShellWrite,
   isTodoRead,
   isWriteTool,
+  needsGuard,
   lastUserText,
   readVersion,
   reminderText,
@@ -204,7 +205,7 @@ export function apply(ctx, config = {}) {
     "tools/pre-execute",
     async (exec, next) => {
       try {
-        const writeAttempt = isWriteTool(exec.name, blockedTools) || isShellWrite(exec.name, exec.arguments);
+        const writeAttempt = needsGuard(exec.name, exec.arguments);
         if (!writeAttempt) return next();
         const sess = exec?.agent?.session;
         // 有会话用会话标记；无会话（子代理等）用全局标记，不能直接放行
