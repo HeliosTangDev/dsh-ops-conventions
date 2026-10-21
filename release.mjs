@@ -53,15 +53,16 @@ if (pushOnly) {
     process.exit(1);
   }
   // 本地缺 tag 时先补（bump 与打 tag 分开做时容易漏，2026-10-21 实际踩到：
-  // src refspec v0.5.7 does not match any）。只补本地，不推送别的东西。
-  const hasTag = sh("git", ["rev-parse", "-q", "--verify", `refs/tags/v${v}`]);
+  // src refspec v0.5.7 does not match any）。注意：sh() 遇非零会退出进程，
+  // 所以"探测 tag 是否存在"必须用非致命的 spawnSync。
+  const hasTag = spawnSync("git", ["rev-parse", "-q", "--verify", `refs/tags/v${v}`], { encoding: "utf8" });
   if (hasTag.status !== 0) {
-    console.log(`本地缺 tag v${v}，按 HEAD 补一个 annotated tag`);
-    const made = sh("git", ["tag", "-a", `v${v}`, "-m", `v${v}`]);
+    const made = spawnSync("git", ["tag", "-a", `v${v}`, "-m", `v${v}`], { encoding: "utf8" });
     if (made.status !== 0) {
-      console.error(made.stderr || made.stdout || "git tag 失败");
+      console.error(`\n[失败] git tag -a v${v}\n${made.stdout ?? ""}${made.stderr ?? ""}`);
       process.exit(1);
     }
+    console.log(`本地缺 tag v${v}，已按 HEAD 补建 annotated tag`);
   }
   const t = pushRef(`v${v}`);
   if (t.status !== 0) {
