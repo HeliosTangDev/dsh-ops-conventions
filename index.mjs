@@ -92,6 +92,9 @@ export function apply(ctx, config = {}) {
   }
 
   const enforce = config.enforce !== false;
+  // 无会话上下文（子代理等）时用全局「已读」标记兜底，避免整类调用绕过守卫
+  let globalReadIndex = false;
+  let globalReadTodo = false;
   const blockedTools =
     Array.isArray(config.blockedTools) && config.blockedTools.length > 0
       ? config.blockedTools
@@ -204,12 +207,12 @@ export function apply(ctx, config = {}) {
         const writeAttempt = isWriteTool(exec.name, blockedTools) || isShellWrite(exec.name, exec.arguments);
         if (!writeAttempt) return next();
         const sess = exec?.agent?.session;
-        if (!sess) {
-          log(`guard skip reason=no-session tool=${exec.name}`);
-          return next();
-        }
-        const needTodo = existsSyncSafe(todoFile) && !sess[READ_TODO];
-        if (sess[READ_INDEX] && !needTodo) return next();
+        // 有会话用会话标记；无会话（子代理等）用全局标记，不能直接放行
+        const idxRead = sess ? !!sess[READ_INDEX] : globalReadIndex;
+        const todoRead = sess ? !!sess[READ_TODO] : globalReadTodo;
+        const needTodo = existsSyncSafe(todoFile) && !todoRead;
+        if (idxRead && !needTodo) return next();
+        if (!sess) log(`guard no-session using-global idx=${idxRead} todo=${todoRead} tool=${exec.name}`);
         if (!enforce) {
           log(`guard skip reason=enforce-off tool=${exec.name}`);
           return next();
@@ -239,7 +242,11 @@ export function apply(ctx, config = {}) {
     try {
       if (result?.isError) return;
       const sess = exec?.agent?.session;
-      if (!sess) return;
+      if (!sess) {
+        if (isIndexRead(exec?.name, exec?.arguments, indexPath)) globalReadIndex = true;
+        if (isTodoRead(exec?.name, exec?.arguments, todoFile)) globalReadTodo = true;
+        return;
+      }
       const sid = sess.id ?? "default";
       if (isIndexRead(exec?.name, exec?.arguments, indexPath)) {
         sess[READ_INDEX] = true;
