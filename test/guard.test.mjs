@@ -67,7 +67,7 @@ function markRead(handlers, sess, indexPath, isError = false) {
   );
 }
 
-test("硬拦截：未读 INDEX 拒绝写工具，读过后放行，闲聊不拦", async () => {
+test("硬拦截：未读 INDEX 拒绝写工具，读过后放行，闲聊轮次也拦", async () => {
   const { handlers, indexPath } = await loadPlugin();
 
   // 1) 操作类轮次 + 未读 INDEX → 写工具被拒；只读仍放行
@@ -88,17 +88,17 @@ test("硬拦截：未读 INDEX 拒绝写工具，读过后放行，闲聊不拦"
   markRead(handlers, s2, indexPath, true);
   assert.equal((await tryTool(handlers, s2, "edit")).kind, "deny");
 
-  // 4) 闲聊轮次不拦
+  // 4) 闲聊轮次也拦（0.5.2 起：写类调用即判定，与用户措辞无关）
   const s3 = session("s3");
   await enterTurn(handlers, s3, "今天天气怎么样");
-  assert.equal((await tryTool(handlers, s3, "write")).kind, "allow");
+  assert.equal((await tryTool(handlers, s3, "write")).kind, "deny");
 
-  // 5) 无 session 的调用 fail-open
+  // 5) 无 session 的调用用全局「已读」标记兜底：全局未读 → 拒绝（0.5.3 起不再直接放行）
   const noSession = await handlers.get("tools/pre-execute")(
     { name: "write", arguments: {} },
     async () => ({ kind: "allow" }),
   );
-  assert.equal(noSession.kind, "allow");
+  assert.equal(noSession.kind, "deny");
 });
 
 test("注入：下一轮即注入（含闲聊），同会话同版本只一次", async () => {

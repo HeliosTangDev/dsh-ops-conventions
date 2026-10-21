@@ -224,11 +224,11 @@ export function apply(ctx, config = {}) {
         }
 
         const version = readVersion(versionFile);
-        const sid = sess.id ?? "default";
+        const sid = sess?.id ?? "default";
         log(`guard deny session=${sid} tool=${exec.name} v${version} needTodo=${needTodo}`);
         return {
           kind: "deny",
-          reason: denyReason(indexPath, version, existsSyncSafe(todoFile) ? todoFile : null, sess[READ_TODO]),
+          reason: denyReason(indexPath, version, existsSyncSafe(todoFile) ? todoFile : null, sess?.[READ_TODO]),
         };
       } catch (err) {
         log(`guard error: ${err?.message ?? String(err)}`);
