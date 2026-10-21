@@ -38,6 +38,14 @@ ode --test）不拦。
 - 单测 13/13 通过（新增 8 正例 + 6 反例）。
 # Changelog
 
+## 0.5.5 — 2026-10-21
+
+### 修复（守卫 fail-open，v0.5.4 的 Release CI 也卡在这里）
+
+- 无 session 上下文时 `sess.id` 与 `sess[READ_TODO]` 会抛 TypeError，被 catch 吞掉后走 `next()` 放行——0.5.3 声称「无 session 不再放行」实际没生效。改为 `sess?.id` / `sess?.[READ_TODO]`。
+- 同步过时单测：0.5.2 起「写类调用即判定、与措辞无关」，测试里「闲聊不拦」与「无 session 放行」两条断言改为 deny。
+- 本地验证：rule 16/16、guard 3/3、compaction OK。
+
 ## 0.5.0 — 2026-10-20
 
 ### 新增
