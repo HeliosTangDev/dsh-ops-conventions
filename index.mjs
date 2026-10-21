@@ -9,6 +9,7 @@ import {
   denyReason,
   isBlockedTool,
   isIndexRead,
+  isShellWrite,
   isTodoRead,
   lastUserText,
   readVersion,
@@ -206,7 +207,7 @@ export function apply(ctx, config = {}) {
         const text = sess[LAST_TEXT];
         if (typeof text !== "string" || !shouldInject(text)) return next();
         if (!enforce || !existsSyncSafe(indexPath)) return next();
-        if (!isBlockedTool(exec.name, blockedTools)) return next();
+        if (!isBlockedTool(exec.name, blockedTools) && !isShellWrite(exec.name, exec.arguments)) return next();
 
         const version = readVersion(versionFile);
         const sid = sess.id ?? "default";

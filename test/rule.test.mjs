@@ -10,6 +10,7 @@ import {
   denyReason,
   isBlockedTool,
   isIndexRead,
+  isShellWrite,
   isTodoRead,
   shouldInject,
   readVersion,
@@ -149,4 +150,27 @@ test("注入文案：给出镜像路径时才提示读它", () => {
   assert.ok(withTodo.includes("D:/x/tasks/OPEN.md"));
   const withoutTodo = reminderText("18", "D:/x/INDEX.md");
   assert.ok(!withoutTodo.includes("待办镜像"));
+});
+test("shell 写操作识别：pwsh 里的写命令要拦，只读命令不拦", () => {
+  const write = [
+    ["pwsh", { command: "Remove-Item D:\\x -Force" }],
+    ["pwsh", { command: "Set-Content -Path a.txt -Value x" }],
+    ["pwsh", { command: "Copy-Item a b" }],
+    ["pwsh", { command: "echo hi > out.txt" }],
+    ["bash", { command: "rm -rf dist" }],
+    ["pwsh", { command: "git push origin main" }],
+    ["pwsh", { command: "ov skills add D:/x -y" }],
+    ["pwsh", { command: "node D:\\software\\ToolsDev\\dsh-ops-conventions\\release.mjs --push-only" }],
+  ];
+  for (const [name, args] of write) assert.equal(isShellWrite(name, args), true, `${name} ${JSON.stringify(args)}`);
+
+  const readOnly = [
+    ["pwsh", { command: "Get-ChildItem D:\\x" }],
+    ["pwsh", { command: "Select-String -Path a.txt -Pattern foo" }],
+    ["pwsh", { command: "git status --porcelain" }],
+    ["pwsh", { command: "node --test test/" }],
+    ["read", { file_path: "D:\\x\\a.txt" }],
+    ["write", { file_path: "D:\\x\\a.txt" }],
+  ];
+  for (const [name, args] of readOnly) assert.equal(isShellWrite(name, args), false, `${name} ${JSON.stringify(args)}`);
 });

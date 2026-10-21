@@ -1,3 +1,12 @@
+## 0.5.1 — 2026-10-21
+
+### 修复
+
+- **硬拦截补口**：原先只拦 write/edit/multi_edit/apply_patch/notebook_edit，**shell 类工具（pwsh/ash）不在名单**，导致"用命令行写文件/跑命令"可以整条绕过守卫（2026-10-21 实测：多轮用 pwsh 写文件未被拦）。
+- 新增 isShellWrite()：shell 工具的命令串里出现写类动词（Set-Content/Copy-Item/Remove-Item/m/mv/> 重定向/git push|tag|commit/ov write|rm|skills add/
+pm i|publish/elease.mjs/schtasks/eg add）即视为写操作，纳入同一守卫；只读命令（Get-ChildItem/git status/
+ode --test）不拦。
+- 单测 13/13 通过（新增 8 正例 + 6 反例）。
 # Changelog
 
 ## 0.5.0 — 2026-10-20

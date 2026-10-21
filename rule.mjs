@@ -135,6 +135,34 @@ export function isBlockedTool(name, blocked = DEFAULT_BLOCKED_TOOLS) {
   return blocked.some((b) => String(b).trim().toLowerCase() === n);
 }
 
+// ---- 命令行里的写操作（shell 不在 blockedTools 里，靠命令串识别；2026-10-21 补口）----
+const SHELL_TOOL = /^(pwsh|powershell|bash|sh|shell|cmd|run_command|exec)$/i;
+
+// 只认"会改动磁盘/远端"的动词与重定向，避免把只读命令也拦掉
+const SHELL_WRITE = new RegExp(
+  [
+    '\\b(?:copy|move|rename|mkdir|rmdir|del)\\b',
+    '\\b(?:set-content|add-content|out-file|new-item|copy-item|move-item|remove-item|rename-item|clear-content|set-itemproperty)\\b',
+    '\\brm\\b|\\bmv\\b|\\bcp\\b|\\bmkdir\\b|\\btouch\\b|\\btee\\b',
+    '>>?\\s*\\S',
+    '\\bgit\\s+(?:push|tag|commit|reset)\\b',
+    '\\bov\\s+(?:write|rm|mkdir|skills\\s+(?:add|remove))\\b',
+    '\\bnpm\\s+(?:i|install|uninstall|publish)\\b',
+    '\\bnode\\s+\\S*release\\.mjs\\b',
+    '\\bschtasks\\b|\\breg\\s+(?:add|delete|import)\\b',
+  ].join('|'),
+  'i',
+);
+
+/** 这条命令调用是不是"要写东西"（shell 类工具专用） */
+export function isShellWrite(name, args) {
+  if (!SHELL_TOOL.test(String(name ?? '').trim())) return false;
+  for (const raw of collectStrings(args)) {
+    if (SHELL_WRITE.test(String(raw))) return true;
+  }
+  return false;
+}
+
 function collectStrings(value, out = []) {
   if (typeof value === "string") out.push(value);
   else if (Array.isArray(value)) for (const v of value) collectStrings(v, out);
