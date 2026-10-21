@@ -11,6 +11,7 @@ import {
   isBlockedTool,
   isIndexRead,
   isShellWrite,
+  isTodoCheck,
   isWriteTool,
   needsGuard,
   isTodoRead,
@@ -153,6 +154,17 @@ test("注入文案：给出镜像路径时才提示读它", () => {
   const withoutTodo = reminderText("18", "D:/x/INDEX.md");
   assert.ok(!withoutTodo.includes("待办镜像"));
 });
+test("硬拦截：跑待办校验器（todo_check.ps1 / todo.cmd）的识别", () => {
+  assert.equal(
+    isTodoCheck("pwsh", { command: "powershell -NoProfile -File D:\\software\\ToolsUse\\_tools\\todo_check.ps1" }),
+    true,
+  );
+  assert.equal(isTodoCheck("bash", { command: "cd /d D:/x && ./todo.cmd" }), true);
+  assert.equal(isTodoCheck("pwsh", { command: "Get-Content D:/x/tasks/OPEN.md" }), false);
+  assert.equal(isTodoCheck("read", { file_path: "D:/x/_tools/todo_check.ps1" }), false);
+  assert.equal(isTodoCheck("pwsh", { command: "echo hi" }), false);
+});
+
 test("shell 写操作识别：pwsh 里的写命令要拦，只读命令不拦", () => {
   const write = [
     ["pwsh", { command: "Remove-Item D:\\x -Force" }],

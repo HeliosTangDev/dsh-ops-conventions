@@ -10,6 +10,7 @@ import {
   isBlockedTool,
   isIndexRead,
   isShellWrite,
+  isTodoCheck,
   isTodoRead,
   isWriteTool,
   needsGuard,
@@ -96,6 +97,7 @@ export function apply(ctx, config = {}) {
   // 无会话上下文（子代理等）时用全局「已读」标记兜底，避免整类调用绕过守卫
   let globalReadIndex = false;
   let globalReadTodo = false;
+  let globalTodoChecked = false; // 无会话时（子代理等）的「跑过待办校验器」标记
   const blockedTools =
     Array.isArray(config.blockedTools) && config.blockedTools.length > 0
       ? config.blockedTools
@@ -122,6 +124,7 @@ export function apply(ctx, config = {}) {
   const GATE = Symbol.for("dsh.opsConventions.injectedVersion");
   const READ_INDEX = Symbol.for("dsh.opsConventions.indexRead");
   const READ_TODO = Symbol.for("dsh.opsConventions.todoMirrorRead");
+  const TODO_CHECKED = Symbol.for("dsh.opsConventions.todoChecked");
   const LAST_TEXT = Symbol.for("dsh.opsConventions.lastUserText");
   const COMPACT_SEEN = Symbol.for("dsh.opsConventions.compactionSeen");
 
@@ -210,7 +213,9 @@ export function apply(ctx, config = {}) {
         const sess = exec?.agent?.session;
         // 有会话用会话标记；无会话（子代理等）用全局标记，不能直接放行
         const idxRead = sess ? !!sess[READ_INDEX] : globalReadIndex;
-        const todoRead = sess ? !!sess[READ_TODO] : globalReadTodo;
+        const todoRead = sess
+          ? !!sess[READ_TODO] || !!sess[TODO_CHECKED]
+          : globalReadTodo || globalTodoChecked;
         const needTodo = existsSyncSafe(todoFile) && !todoRead;
         if (idxRead && !needTodo) return next();
         if (!sess) log(`guard no-session using-global idx=${idxRead} todo=${todoRead} tool=${exec.name}`);
@@ -246,6 +251,10 @@ export function apply(ctx, config = {}) {
       if (!sess) {
         if (isIndexRead(exec?.name, exec?.arguments, indexPath)) globalReadIndex = true;
         if (isTodoRead(exec?.name, exec?.arguments, todoFile)) globalReadTodo = true;
+        if (isTodoCheck(exec?.name, exec?.arguments)) {
+          globalTodoChecked = true;
+          log("guard todo-check (no-session)");
+        }
         return;
       }
       const sid = sess.id ?? "default";
@@ -256,6 +265,10 @@ export function apply(ctx, config = {}) {
       if (isTodoRead(exec?.name, exec?.arguments, todoFile)) {
         sess[READ_TODO] = true;
         log(`guard todo-read session=${sid}`);
+      }
+      if (isTodoCheck(exec?.name, exec?.arguments)) {
+        sess[TODO_CHECKED] = true;
+        log(`guard todo-check session=${sid}`);
       }
     } catch (err) {
       log(`guard observe error: ${err?.message ?? String(err)}`);

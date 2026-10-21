@@ -87,7 +87,7 @@ export function readVersion(file) {
 
 /** 注入内容（强制措辞；含 6 行常驻约定，避免依赖会被抽取重写的 profile 段） */
 export function reminderText(version, indexPath, todoPath) {
-  const todo = todoPath ? `；并 read 待办镜像 ${todoPath}（读到它就去 list tasks/ 与 sessions，别只看本会话）` : "";
+  const todo = todoPath ? `；并 read 待办镜像 ${todoPath} 或运行 todo_check.ps1（二选一；报待办前必须先跑校验，镜像只是快照）` : "";
   return (
     `[操作约定 v${version}｜强制] 动手前必须 read ${indexPath} 并执行对应清单` + todo +
     "（ops-scripts/notes/files/check/longtask/dsh）；收尾按 ops-check：记忆归并、清 _tasks、归档登记。" +
@@ -247,12 +247,25 @@ export function isTodoRead(name, args, todoPath) {
   return false;
 }
 
+// 跑待办检查器（todo_check.ps1 / todo.cmd）= 真的做了「报待办前先校验」
+// 这是 B 方案的核心：把"报前先跑校验"从文案变成 guard 可观测的动作。
+const TODO_CHECK = /todo(?:_check)?\.(?:ps1|cmd)/i;
+
+/** 这次调用是不是在跑待办检查器（shell 类工具 + 参数里出现 todo_check.ps1 / todo.cmd） */
+export function isTodoCheck(name, args) {
+  if (!SHELL_TOOL.test(String(name ?? "").trim())) return false;
+  for (const raw of collectStrings(args)) {
+    if (TODO_CHECK.test(String(raw))) return true;
+  }
+  return false;
+}
+
 /** 硬拦截时回给模型的拒绝理由（要能直接照做） */
 export function denyReason(indexPath, version, todoPath, todoRead) {
   const v = version ? ` v${version}` : "";
   const parts = [`read 约定索引 ${indexPath}`];
   if (todoPath && !todoRead) {
-    parts.push(`read 待办镜像 ${todoPath}（唯一来源 viking://user/default/memories/tasks/ 与 sessions/，不读就不知道别的会话还挂着什么）`);
+    parts.push(`read 待办镜像 ${todoPath}，或运行 todo_check.ps1（二选一；它逐条跑校验给出实时结果，镜像是快照）`);
   }
   return (
     `[操作约定${v}｜硬拦截] 本会话还没 ` + parts.join("，也没 ") + "。做完后" +

@@ -167,3 +167,40 @@ test("硬拦截：镜像存在但未读 → 读过 INDEX 仍被拒；读了镜�
   const r = await enterTurn(handlers, session("s-todo-inj"), "把笔记整理一下");
   assert.ok(JSON.stringify(r.messages).includes("OPEN.md"));
 });
+
+test("硬拦截：不读镜像、改为跑 todo_check.ps1 也应放行（B 方案的硬拦动作）", async () => {
+  const { handlers, indexPath } = await loadPlugin({ withTodo: true });
+  const s = session("s-todo-check");
+  await enterTurn(handlers, s, "帮我改个脚本");
+
+  // 只读 INDEX + 没读镜像 → 仍拦
+  handlers.get("tools/result")(
+    { name: "read", arguments: { file_path: indexPath }, agent: { session: s } },
+    {},
+  );
+  assert.equal((await tryTool(handlers, s, "write")).kind, "deny");
+
+  // 用 pwsh 跑待办校验器 → 视为已完成「报前先校验」，放行
+  handlers.get("tools/result")(
+    {
+      name: "pwsh",
+      arguments: { command: "powershell -NoProfile -File D:\\software\\ToolsUse\\_tools\\todo_check.ps1" },
+      agent: { session: s },
+    },
+    {},
+  );
+  assert.equal((await tryTool(handlers, s, "write")).kind, "allow");
+
+  // 只读命令里有 todo_check 字样但工具是 read → 不算（必须是 shell 执行）
+  const s2 = session("s-todo-check-neg");
+  await enterTurn(handlers, s2, "把配置改一下");
+  handlers.get("tools/result")(
+    { name: "read", arguments: { file_path: indexPath }, agent: { session: s2 } },
+    {},
+  );
+  handlers.get("tools/result")(
+    { name: "read", arguments: { file_path: "D:/x/_tools/todo_check.ps1" }, agent: { session: s2 } },
+    {},
+  );
+  assert.equal((await tryTool(handlers, s2, "write")).kind, "deny");
+});
