@@ -12,6 +12,7 @@ import {
   isIndexRead,
   isShellWrite,
   isWriteTool,
+  needsGuard,
   isTodoRead,
   shouldInject,
   readVersion,
@@ -191,4 +192,24 @@ test("shell 里读 INDEX/OPEN.md 也算已读", () => {
   assert.equal(isTodoRead("pwsh", { command: `type "${todo}"` }, todo), true);
   assert.equal(isTodoRead("read", { file_path: todo }, todo), true);
   assert.equal(isTodoRead("pwsh", { command: "git status" }, todo), false);
+});
+test("白名单矩阵：只读工具放行，写/未知工具一律要求先读约定", () => {
+  // 放行：明确只读（内置 + MCP + 未来的只读命名）
+  const allowed = ["read", "read_file", "glob", "grep", "list", "ls", "status", "get",
+    "web_fetch", "web_search", "weather", "mcp__openviking__read", "mcp__openviking__find",
+    "mcp__openviking__search", "mcp__openviking__list", "mcp__openviking__health",
+    "agent_teams_status", "mcp__openviking__get_acl", "domain_search", "platform_search"];
+  for (const n of allowed) assert.equal(needsGuard(n, {}), false, `应放行: ${n}`);
+
+  // 拦：内置写、MCP 写、dshm、调度、团队、以及"未来新增的未知工具"
+  const blocked = ["write", "edit", "pwsh", "mcp__openviking__write", "mcp__openviking__edit",
+    "mcp__openviking__remember", "mcp__openviking__add_resource", "mcp__openviking__add_skill",
+    "dshm_install", "dshm_toggle", "schedule_create", "agent_teams_create", "agent_teams_spawn_member",
+    "some_future_tool", "mcp__newsrv__upload", "todo_write", "present"];
+  for (const n of blocked) assert.equal(needsGuard(n, {}), true, `应拦: ${n}`);
+
+  // shell：只读命令放行，写命令拦
+  assert.equal(needsGuard("pwsh", { command: "Get-Process" }), false);
+  assert.equal(needsGuard("pwsh", { command: "Remove-Item x" }), true);
+  assert.equal(needsGuard("bash", { command: "ls -la" }), false);
 });

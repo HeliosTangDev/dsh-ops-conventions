@@ -147,6 +147,31 @@ export function isWriteTool(name, blocked = DEFAULT_BLOCKED_TOOLS) {
   return isBlockedTool(n, blocked) || WRITE_TOOL_NAME.test(n);
 }
 
+// ---- 只读白名单：明确只读才放行，其余（含未来新增工具）默认按"可能写"处理 ----
+const READONLY_TOOL_NAME =
+  /(?:^|__|[-_])(?:read|read_file|read_text|search|find|glob|grep|list|ls|dir|status|info|get|query|inspect|view|show|stat|health|ping|version|outdated|describe|fetch|web_fetch|web_search|weather|worldclock|calc|diff|check|validate|explain)$/i;
+
+/** 工具名是否明确只读（可安全跳过守卫） */
+export function isReadOnlyTool(name) {
+  const n = String(name ?? "").trim();
+  if (!n) return false;
+  return READONLY_TOOL_NAME.test(n);
+}
+
+/**
+ * 这次调用是否需要"先读约定"：
+ * - 明确只读工具（read/search/list/status/…）→ 不需要
+ * - shell：只拦命令串里的写操作 → 只读命令不需要
+ * - 其余一律需要（内置写工具、MCP 未知工具、`dshm_*`、将来新增的任何工具）→ **未知即拦**
+ */
+export function needsGuard(name, args) {
+  const n = String(name ?? "").trim();
+  if (!n) return true; // 名字缺失，保守拦
+  if (isReadOnlyTool(n)) return false;
+  if (SHELL_TOOL.test(n)) return isShellWrite(n, args);
+  return true;
+}
+
 // ---- 命令行里的写操作（shell 不在 blockedTools 里，靠命令串识别；2026-10-21 补口）----
 const SHELL_TOOL = /^(pwsh|powershell|bash|sh|shell|cmd|run_command|exec)$/i;
 
