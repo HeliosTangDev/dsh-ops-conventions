@@ -279,6 +279,18 @@ export function denyReason(indexPath, version, todoPath, todoRead) {
  * 口径：contextTimeline.val.events 里 kind === "compaction" 的条目才是压缩次数；
  * archived 只是「被压缩掉的历史条目」，不是次数（400 条归档可能只对应 1 次压缩）。
  */
+/** 会话 id 归一：DSH 的 Session.id 可能带 `session-` / `session_` 前缀，缓存文件名只用裸 uuid */
+export function normalizeSessionId(sid) {
+  return String(sid ?? "").trim().replace(/^session[-_]/i, "");
+}
+
+/** 投影缓存文件的候选文件名（真实文件名形如 session-<uuid>.json，兼容裸 uuid） */
+export function projectionFileCandidates(sid) {
+  const base = normalizeSessionId(sid);
+  if (!base) return [];
+  return [`session-${base}.json`, `${base}.json`];
+}
+
 export function compactionStats(projection) {
   const rows = projection?.record?.rows ?? {};
   const timeline = rows.contextTimeline?.val ?? {};

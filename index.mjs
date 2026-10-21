@@ -14,6 +14,8 @@ import {
   isTodoRead,
   isWriteTool,
   needsGuard,
+  normalizeSessionId,
+  projectionFileCandidates,
   lastUserText,
   readVersion,
   reminderText,
@@ -60,14 +62,20 @@ export function apply(ctx, config = {}) {
     process.env.DSH_SESSION_CACHE_DIR ??
     join(homedir(), ".dsh", "storages", "session_projcache", "sessions");
 
-  /** 找到本会话的投影缓存文件（session-<id>.json；id 可能是全量或前缀） */
+  /** 找到本会话的投影缓存文件（session-<uuid>.json；sid 可能自带 session- 前缀） */
   function projectionPath(sid) {
     if (!sid || sid === "default") return null;
-    const exact = join(projectionDir, `session-${sid}.json`);
-    if (existsSyncSafe(exact)) return exact;
+    const base = normalizeSessionId(sid);
+    if (!base) return null;
+    for (const name of projectionFileCandidates(sid)) {
+      const p = join(projectionDir, name);
+      if (existsSyncSafe(p)) return p;
+    }
     try {
       const hit = readdirSync(projectionDir).find(
-        (f) => f.startsWith(`session-${sid}`) && f.endsWith(".json"),
+        (f) =>
+          f.endsWith(".json") &&
+          (f.startsWith(`session-${base}`) || f.startsWith(base)),
       );
       if (hit) return join(projectionDir, hit);
     } catch {

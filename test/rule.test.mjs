@@ -14,6 +14,8 @@ import {
   isTodoCheck,
   isWriteTool,
   needsGuard,
+  normalizeSessionId,
+  projectionFileCandidates,
   isTodoRead,
   shouldInject,
   readVersion,
@@ -224,4 +226,13 @@ test("白名单矩阵：只读工具放行，写/未知工具一律要求先读�
   assert.equal(needsGuard("pwsh", { command: "Get-Process" }), false);
   assert.equal(needsGuard("pwsh", { command: "Remove-Item x" }), true);
   assert.equal(needsGuard("bash", { command: "ls -la" }), false);
+});
+test("会话 id 归一与投影缓存候选名：带/不带 session- 前缀都能命中", () => {
+  const uuid = "cada2fe1-130a-4c63-9914-204fb6449855";
+  assert.equal(normalizeSessionId("session-" + uuid), uuid);
+  assert.equal(normalizeSessionId("session_" + uuid), uuid);
+  assert.equal(normalizeSessionId(uuid), uuid);
+  assert.deepEqual(projectionFileCandidates("session-" + uuid), ["session-" + uuid + ".json", uuid + ".json"]);
+  assert.deepEqual(projectionFileCandidates(uuid), ["session-" + uuid + ".json", uuid + ".json"]);
+  assert.deepEqual(projectionFileCandidates(""), []);
 });

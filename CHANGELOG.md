@@ -1,3 +1,12 @@
+## 0.5.7 — 2026-10-21
+
+### 修复：压缩提示从未触发（路径拼错）
+
+- 现象：会话投影缓存里明明有 compaction 事件（本机实测某会话 3 次 / 248 条事件），但插件日志里 compaction baseline / compaction hint **一条都没有**。
+- 根因：projectionPath(sid) 用 `session-{sid}.json` 拼路径，而 DSH 传进来的 sid **本身已带 session- 前缀** → 拼成 session-session-*.json，找不到文件，eadCompactionStats 永远返回 null。
+- 修复：新增 
+ormalizeSessionId()（剥前缀）与 projectionFileCandidates()（返回候选文件名），projectionPath 先按候选名精确查、再按裸 uuid 前缀扫目录；带/不带前缀都能命中。
+- 单测：新增 1 条（带 session-/session_/裸 uuid 三种输入归一 + 候选名 + 空输入）。
 ## 0.5.6 — 2026-10-21
 
 ### 新增：待办校验器也算「已校验」（B 方案，硬拦而非文案）
