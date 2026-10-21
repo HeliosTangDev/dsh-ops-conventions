@@ -52,6 +52,17 @@ if (pushOnly) {
     console.error("网络恢复后重跑本命令即可（不会 bump）。");
     process.exit(1);
   }
+  // 本地缺 tag 时先补（bump 与打 tag 分开做时容易漏，2026-10-21 实际踩到：
+  // src refspec v0.5.7 does not match any）。只补本地，不推送别的东西。
+  const hasTag = sh("git", ["rev-parse", "-q", "--verify", `refs/tags/v${v}`]);
+  if (hasTag.status !== 0) {
+    console.log(`本地缺 tag v${v}，按 HEAD 补一个 annotated tag`);
+    const made = sh("git", ["tag", "-a", `v${v}`, "-m", `v${v}`]);
+    if (made.status !== 0) {
+      console.error(made.stderr || made.stdout || "git tag 失败");
+      process.exit(1);
+    }
+  }
   const t = pushRef(`v${v}`);
   if (t.status !== 0) {
     reportPush(t, `git push origin v${v}`);
