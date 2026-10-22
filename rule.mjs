@@ -91,12 +91,14 @@ export function reminderText(version, indexPath, todoPath) {
   return (
     `[操作约定 v${version}｜强制] 动手前必须 read ${indexPath} 并执行对应清单` + todo +
     "（ops-scripts/notes/files/check/longtask/dsh）；收尾按 ops-check：记忆归并、清 _tasks、归档登记。" +
-    "开场先扫 tasks 与 sessions，有到期/等待项当面提醒；顺带清工作区 _tasks 残留。" +
+    "开场先扫 tasks（OPEN.md + MAINT-LATEST.md 的 Issues 段）与 sessions，有到期/等待项当面提醒；顺带清工作区 _tasks 残留。" +
     "失败分类报原文，不许吞或粉饰；删/移/覆盖前确认绝对路径，先复制成功再删旧。" +
     "不问「要不要」；要拍板给 A/B/C+代价；结论与入口一次列全（该做/已做/要你做/可选），直白中文不自造术语。" +
     "结尾两段：待办在前（要你做/在等/待拍板，脚本命令写全路径与参数），任务级未完成与等待只进待办；" +
     "自检只写命令报错/没执行/失败，可修项下轮先修并复检。" +
     "mem candidates 有候选就提醒升门铃，由你定。" +
+    "提到约定（含复述旧约定）先判层再当场落位：跨类的进门铃、某类的进清单、参考的进偏好与实体；" +
+    "只写记忆=没写成，落位后读回。" +
     "harness：不改 .agent-teams/.dsh 运行时状态；改配置先备份；" +
     "凭证只从 _secrets 读，不贴聊天/不写记忆；不擅自升级/重启。" +
     "一主线一会话，别的事记待办；不说「待会儿做」（当场做或明说等触发），不列多方案让人挑。" +

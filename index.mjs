@@ -223,6 +223,8 @@ export function apply(ctx, config = {}) {
       try {
         const writeAttempt = needsGuard(exec.name, exec.arguments);
         if (!writeAttempt) return next();
+        // 结构检查器本身永远放行：否则「先跑检查器」会被结构门反过来挡住（死锁）
+        if (structCheckIds(exec.name, exec.arguments).length > 0) return next();
         const sess = exec?.agent?.session;
         // 有会话用会话标记；无会话（子代理等）用全局标记，不能直接放行
         const idxRead = sess ? !!sess[READ_INDEX] : globalReadIndex;
