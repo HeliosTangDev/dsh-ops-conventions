@@ -260,6 +260,26 @@ export function isTodoCheck(name, args) {
   return false;
 }
 
+// ---- 结构检查门（2026-10-22）：写工具区之前，本会话必须跑过一次 tools_check.py ----
+const TOOLS_CHECK = /tools_check\.py/i;
+
+/** 这次调用是不是在跑工具区的结构检查器 */
+export function isToolsCheck(name, args) {
+  if (!SHELL_TOOL.test(String(name ?? "").trim())) return false;
+  for (const raw of collectStrings(args)) {
+    if (TOOLS_CHECK.test(String(raw))) return true;
+  }
+  return false;
+}
+
+/** 这次调用的参数是否涉及工具区（ToolsUse / ToolsDev）——只对工具区的写操作加门 */
+export function touchesToolArea(args) {
+  for (const raw of collectStrings(args)) {
+    const s = String(raw).toLowerCase().replace(/\\/g, "/");
+    if (s.includes("software/toolsuse") || s.includes("software/toolsdev")) return true;
+  }
+  return false;
+}
 /** 硬拦截时回给模型的拒绝理由（要能直接照做） */
 export function denyReason(indexPath, version, todoPath, todoRead) {
   const v = version ? ` v${version}` : "";

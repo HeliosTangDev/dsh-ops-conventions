@@ -17,6 +17,8 @@ import {
   normalizeSessionId,
   projectionFileCandidates,
   isTodoRead,
+  isToolsCheck,
+  touchesToolArea,
   shouldInject,
   readVersion,
   reminderText,
@@ -235,4 +237,14 @@ test("会话 id 归一与投影缓存候选名：带/不带 session- 前缀都�
   assert.deepEqual(projectionFileCandidates("session-" + uuid), ["session-" + uuid + ".json", uuid + ".json"]);
   assert.deepEqual(projectionFileCandidates(uuid), ["session-" + uuid + ".json", uuid + ".json"]);
   assert.deepEqual(projectionFileCandidates(""), []);
+});
+test("结构门：跑 tools_check.py 才放行工具区写操作", () => {
+  assert.equal(isToolsCheck("pwsh", { command: "python D:\\software\\ToolsUse\\_tools\\misc\\tools_check.py" }), true);
+  assert.equal(isToolsCheck("pwsh", { command: "python -m http.server" }), false);
+  assert.equal(isToolsCheck("read", { file_path: "D:/software/ToolsUse/_tools/misc/tools_check.py" }), false);
+
+  assert.equal(touchesToolArea({ file_path: "D:\\software\\ToolsUse\\TOOLS.md" }), true);
+  assert.equal(touchesToolArea({ command: "copy a D:\\software\\ToolsDev\\x" }), true);
+  assert.equal(touchesToolArea({ file_path: "D:\\TANG\\blog\\a.md" }), false);
+  assert.equal(touchesToolArea({}), false);
 });
