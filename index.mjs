@@ -12,8 +12,9 @@ import {
   isShellWrite,
   isTodoCheck,
   isTodoRead,
-  isToolsCheck,
-  touchesToolArea,
+  STRUCT_GATES,
+  structCheckIds,
+  structGatesFor,
   isWriteTool,
   needsGuard,
   normalizeSessionId,
@@ -107,7 +108,7 @@ export function apply(ctx, config = {}) {
   // 无会话上下文（子代理等）时用全局「已读」标记兜底，避免整类调用绕过守卫
   let globalReadIndex = false;
   let globalReadTodo = false;
-  let globalStructChecked = false;
+  let globalStructChecked = {};
   let globalTodoChecked = false; // 无会话时（子代理等）的「跑过待办校验器」标记
   const blockedTools =
     Array.isArray(config.blockedTools) && config.blockedTools.length > 0
@@ -230,17 +231,23 @@ export function apply(ctx, config = {}) {
           : globalReadTodo || globalTodoChecked;
         const needTodo = existsSyncSafe(todoFile) && !todoRead;
         if (idxRead && !needTodo) return next();
-        // 第三道门：写工具区之前，本会话必须跑过一次 tools_check.py（结构/归档/GC 检查）
-        const structChecked = sess ? !!sess[STRUCT_CHECKED] : globalStructChecked;
-        if (touchesToolArea(exec.arguments) && !structChecked) {
-          log(`guard deny-struct session=${sess ? (sess.id ?? "default") : "none"} tool=${exec.name}`);
-          return {
-            kind: "deny",
-            reason:
-              "「操作约定｜结构门」本会话还没跑过工具区结构检查。先执行：" +
-              "python D:\\software\\ToolsUse\\_tools\\misc\\tools_check.py" +
-              "（它会列出 平铺文件 / 归档缺 README / events 超阈值 / _backups 散文件，任一项 FAIL 就先修），然后重试本次写操作。",
-          };
+        // 第三道门：写某个区域之前，本会话必须跑过该区域的结构检查器（通用，按路径匹配）
+        const gateIds = structGatesFor(exec.arguments);
+        if (gateIds.length) {
+          const checked = sess ? (sess[STRUCT_CHECKED] || {}) : globalStructChecked;
+          const missing = gateIds.filter((id) => !checked[id]);
+          if (missing.length) {
+            const g = missing[0];
+            const gate = STRUCT_GATES.find((x) => x.id === g);
+            log(`guard deny-struct gate=${g} session=${sess ? (sess.id ?? "default") : "none"} tool=${exec.name}`);
+            return {
+              kind: "deny",
+              reason:
+                `「操作约定｜结构门:${g}」本会话还没跑过该区域的结构检查。先执行：` +
+                (gate ? gate.checker : "该区域的结构检查器") +
+                "（它会列出结构与规范问题；跑一次即放行，发现问题先修），然后重试本次写操作。",
+            };
+          }
         }
         if (!sess) log(`guard no-session using-global idx=${idxRead} todo=${todoRead} tool=${exec.name}`);
         if (!enforce) {
@@ -275,10 +282,11 @@ export function apply(ctx, config = {}) {
       if (!sess) {
         if (isIndexRead(exec?.name, exec?.arguments, indexPath)) globalReadIndex = true;
         if (isTodoRead(exec?.name, exec?.arguments, todoFile)) globalReadTodo = true;
-        if (isToolsCheck(exec?.name, exec?.arguments)) {
-          sess[STRUCT_CHECKED] = true;
-          globalStructChecked = true;
-          log(`guard struct-check session=${sid}`);
+        for (const id of structCheckIds(exec?.name, exec?.arguments)) {
+          sess[STRUCT_CHECKED] = sess[STRUCT_CHECKED] || {};
+          sess[STRUCT_CHECKED][id] = true;
+          globalStructChecked[id] = true;
+          log(`guard struct-check id=${id} session=${sid}`);
         }
         if (isTodoCheck(exec?.name, exec?.arguments)) {
           globalTodoChecked = true;

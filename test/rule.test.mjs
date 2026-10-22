@@ -18,6 +18,8 @@ import {
   projectionFileCandidates,
   isTodoRead,
   isToolsCheck,
+  structGatesFor,
+  structCheckIds,
   touchesToolArea,
   shouldInject,
   readVersion,
@@ -25,6 +27,7 @@ import {
   resolveSkillsDir,
   skillsDirCandidates,
   lastUserText,
+  STRUCT_GATES,
 } from "../rule.mjs";
 
 test("触发判断：操作类句子命中", () => {
@@ -247,4 +250,21 @@ test("结构门：跑 tools_check.py 才放行工具区写操作", () => {
   assert.equal(touchesToolArea({ command: "copy a D:\\software\\ToolsDev\\x" }), true);
   assert.equal(touchesToolArea({ file_path: "D:\\TANG\\blog\\a.md" }), false);
   assert.equal(touchesToolArea({}), false);
+});
+test("通用结构门：按区域匹配检查器，加区域只加配置", () => {
+  // 工具区 → tools 门
+  assert.deepEqual(structGatesFor({ file_path: "D:\\software\\ToolsUse\\TOOLS.md" }), ["tools"]);
+  assert.deepEqual(structGatesFor({ command: "copy a D:\\software\\ToolsDev\\x" }), ["tools"]);
+  // 笔记区 → notes 门
+  assert.deepEqual(structGatesFor({ file_path: "D:\\TANG\\blog\\article\\course\\x\\a.md" }), ["notes"]);
+  // 两个区都碰到 → 两个门
+  assert.deepEqual(structGatesFor({ paths: ["D:/software/ToolsUse/a", "D:/TANG/blog/article/course/b"] }).sort(), ["notes", "tools"]);
+  // 无关路径 → 无门
+  assert.deepEqual(structGatesFor({ file_path: "C:\\Users\\x\\a.txt" }), []);
+  // 识别检查器调用
+  assert.deepEqual(structCheckIds("pwsh", { command: "python D:\\software\\ToolsUse\\_tools\\misc\\tools_check.py" }), ["tools"]);
+  assert.deepEqual(structCheckIds("pwsh", { command: "python D:\\software\\ToolsUse\\_tools\\misc\\notes_check.py" }), ["notes"]);
+  assert.deepEqual(structCheckIds("pwsh", { command: "git status" }), []);
+  // 每个门都有可执行的检查命令
+  for (const g of STRUCT_GATES) assert.ok(g.checker && g.checker.length > 10, g.id);
 });

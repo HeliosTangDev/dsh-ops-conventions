@@ -260,7 +260,44 @@ export function isTodoCheck(name, args) {
   return false;
 }
 
-// ---- 结构检查门（2026-10-22）：写工具区之前，本会话必须跑过一次 tools_check.py ----
+// ---- 通用结构门（2026-10-22）：写某区域前，本会话必须跑过该区域的结构检查器 ----
+// 加区域只加配置，不改代码。
+export const STRUCT_GATES = [
+  {
+    id: "tools",
+    pathRe: /software[\\/](toolsuse|toolsdev)/i,
+    checkRe: /tools_check\.py/i,
+    checker: "python D:\\software\\ToolsUse\\_tools\\misc\\tools_check.py",
+  },
+  {
+    id: "notes",
+    pathRe: /blog[\\/]article[\\/]course/i,
+    checkRe: /notes_check\.py/i,
+    checker: "python D:\\software\\ToolsUse\\_tools\\misc\\notes_check.py",
+  },
+];
+
+/** 这次调用命中了哪些结构门（按参数里的路径匹配） */
+export function structGatesFor(args) {
+  const ids = [];
+  for (const raw of collectStrings(args)) {
+    const s = String(raw).replace(/\\/g, "/");
+    for (const g of STRUCT_GATES) if (g.pathRe.test(s) && !ids.includes(g.id)) ids.push(g.id);
+  }
+  return ids;
+}
+
+/** 这条命令是不是某区域的结构检查器（跑过即该门放行） */
+export function structCheckIds(name, args) {
+  if (!SHELL_TOOL.test(String(name ?? "").trim())) return [];
+  const ids = [];
+  for (const raw of collectStrings(args)) {
+    const s = String(raw);
+    for (const g of STRUCT_GATES) if (g.checkRe.test(s) && !ids.includes(g.id)) ids.push(g.id);
+  }
+  return ids;
+}
+
 const TOOLS_CHECK = /tools_check\.py/i;
 
 /** 这次调用是不是在跑工具区的结构检查器 */
