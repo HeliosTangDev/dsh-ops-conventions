@@ -91,7 +91,7 @@ export function reminderText(version, indexPath, todoPath) {
   return (
     `[操作约定 v${version}｜强制] 动手前必须 read ${indexPath} 并执行对应清单` + todo +
     "；收尾按 ops-check：记忆归并、清 _tasks、归档登记。" +
-    "开场扫 tasks（OPEN.md+MAINT-LATEST Issues）与 sessions，到期项当面提醒，清 _tasks 残留。" +
+    "开场先扫 tasks（OPEN.md+MAINT-LATEST Issues）与 sessions，到期项当面提醒，清 _tasks 残留。" +
     "失败分类报原文，不许吞或粉饰；删/移/覆盖前确认绝对路径，先复制成功再删旧。" +
     "不问「要不要」；要拍板给 A/B/C+代价；结论与入口一次列全（该做/已做/要你做/可选），直白中文不自造术语。" +
     "结尾两段：待办在前（要你做/在等/待拍板，命令写全路径与参数），任务未完成与等待只进待办；自检只写报错/未执行/失败，可修当场修并复检。" +
@@ -102,7 +102,7 @@ export function reminderText(version, indexPath, todoPath) {
     "harness：改配置先备份；凭证只从 _secrets 读，不贴聊天不写记忆；不擅自升级/重启。" +
     "一主线一会话，别的事记待办；不列多方案让人挑。" +
     "结论带证据，查不到说查不到、推断标「推断」；状态当场取（时间/进程/任务记录）；工作区外写先申请放宽。" +
-    "改动先备份可回滚；收益＜成本就停；只改工具区，系统级交本人；换会话自决，仅「压缩提示」判一次；skill 报 unknown 直接 read。"
+    "改动先备份可回滚（哈希证明）；收益＜成本就停；只改工具区，系统级交本人；换会话自决，仅「压缩提示」判一次；skill 报 unknown 直接 read。"
   );
 }
 
