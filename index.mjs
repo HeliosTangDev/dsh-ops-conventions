@@ -1,6 +1,7 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { createUserMessage } from "@deepseek-ai/dsh-llm";
 import {
   DEFAULT_BLOCKED_TOOLS,
@@ -23,6 +24,7 @@ import {
   maintHintText,
   readVersion,
   reminderText,
+  bellIntegrity,
   resolveLogFile,
   resolveSkillsDir,
   shouldInject,
@@ -164,11 +166,17 @@ export function apply(ctx, config = {}) {
           if (sess) sess[GATE] = version;
           delivered.set(sid, version);
           const text2 = reminderText(version, indexPath, existsSyncSafe(todoFile) ? todoFile : null);
-          log(`inject v${version} session=${sid} chars=${text2.length}`);
+          let injectText = text2;
+          const integ = bellIntegrity(fileURLToPath(new URL("./rule.mjs", import.meta.url)), join(skillsDir, "bell_state.json"));
+          if (!integ.ok) {
+            log(`bell integrity FAIL installed=${String(integ.actual).slice(0, 12)} bound=${String(integ.expected).slice(0, 12)}`);
+            injectText = "[门铃完整性告警] 已装 rule.mjs 与版本绑定不一致（被手改、未走 sync.cmd），请跑 sync.cmd 后重启。\n" + text2;
+          }
+          log(`inject v${version} session=${sid} chars=${injectText.length}`);
           messages = [
             ...messages,
             createUserMessage({
-              content: [{ type: "text", text: text2 }],
+              content: [{ type: "text", text: injectText }],
               source: {
                 kind: "plugin:dsh-ops-conventions",
                 plugin: "dsh-ops-conventions",

@@ -1,4 +1,5 @@
 import { readFileSync, existsSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { join, dirname } from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -394,4 +395,22 @@ export function compactionHintText(stats) {
     "压缩说明上下文确实被裁过：若这条主线已收尾或进入等待，可在回复末尾提一句换会话（写清新会话先读哪张卡）；" +
     "若还在同一主线且状态没外化，就继续，不要为压缩而中断。"
   );
+}
+
+/**
+ * 门铃完整性：已装 rule.mjs 的 sha256 是否等于 bell_state.json 绑定的值。
+ * 手改已装副本（绕过 sync.cmd）时返回 ok=false，注入方据此加一行告警。
+ * @param {string} ruleFile 已装 rule.mjs 的绝对路径
+ * @param {string} stateFile ops-skills/bell_state.json
+ */
+export function bellIntegrity(ruleFile, stateFile) {
+  try {
+    const sha = createHash("sha256").update(readFileSync(ruleFile)).digest("hex").toUpperCase();
+    if (!existsSync(stateFile)) return { ok: true, reason: "no-state" };
+    const st = JSON.parse(readFileSync(stateFile, "utf8"));
+    if (!st || !st.sha256) return { ok: true, reason: "bad-state" };
+    return { ok: st.sha256 === sha, expected: st.sha256, actual: sha };
+  } catch (e) {
+    return { ok: true, reason: "error: " + (e && e.message) };
+  }
 }
