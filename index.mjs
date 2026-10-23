@@ -285,10 +285,8 @@ export function apply(ctx, config = {}) {
         if (isIndexRead(exec?.name, exec?.arguments, indexPath)) globalReadIndex = true;
         if (isTodoRead(exec?.name, exec?.arguments, todoFile)) globalReadTodo = true;
         for (const id of structCheckIds(exec?.name, exec?.arguments)) {
-          sess[STRUCT_CHECKED] = sess[STRUCT_CHECKED] || {};
-          sess[STRUCT_CHECKED][id] = true;
           globalStructChecked[id] = true;
-          log(`guard struct-check id=${id} session=${sid}`);
+          log(`guard struct-check id=${id} session=none`);
         }
         if (isTodoCheck(exec?.name, exec?.arguments)) {
           globalTodoChecked = true;
@@ -308,6 +306,12 @@ export function apply(ctx, config = {}) {
       if (isTodoCheck(exec?.name, exec?.arguments)) {
         sess[TODO_CHECKED] = true;
         log(`guard todo-check session=${sid}`);
+      }
+      for (const id of structCheckIds(exec?.name, exec?.arguments)) {
+        sess[STRUCT_CHECKED] = sess[STRUCT_CHECKED] || {};
+        sess[STRUCT_CHECKED][id] = true;
+        globalStructChecked[id] = true;
+        log(`guard struct-check id=${id} session=${sid}`);
       }
     } catch (err) {
       log(`guard observe error: ${err?.message ?? String(err)}`);
