@@ -268,3 +268,10 @@ test("通用结构门：按区域匹配检查器，加区域只加配置", () =>
   // 每个门都有可执行的检查命令
   for (const g of STRUCT_GATES) assert.ok(g.checker && g.checker.length > 10, g.id);
 });
+import { maintHintText } from "../rule.mjs";
+test("维护报告摘要：无 Issues 不注入，有 Issues 带出来", () => {
+  assert.equal(maintHintText("# x\n\n## Issues\n- none\n"), "");
+  assert.equal(maintHintText("# x\n"), "");
+  const h = maintHintText("# x\n\n## Issues\n- a broken\n- b broken\n\n## Actions taken\n");
+  assert.ok(h.includes("[维护报告] 2 项待处理"), h);
+});

@@ -106,6 +106,21 @@ export function reminderText(version, indexPath, todoPath) {
   );
 }
 
+/** 维护报告的 Issues 摘要：没有 Issues 返回 ""（正常情况零注入成本） */
+export function maintHintText(report) {
+  const s = String(report ?? "");
+  const m = s.match(/##\s*Issues\s*\n([\s\S]*?)(?:\n##\s|$)/);
+  if (!m) return "";
+  const items = m[1]
+    .split(/\r?\n/)
+    .map((l) => l.replace(/^[-*]\s*/, "").trim())
+    .filter((l) => l && !/^none$/i.test(l));
+  if (!items.length) return "";
+  const head = items.slice(0, 4).join("；");
+  const more = items.length > 4 ? ` 等 ${items.length} 项` : "";
+  return `[维护报告] ${items.length} 项待处理：${head}${more}（D:\\software\\ToolsDev\\tasks\\MAINT-LATEST.md）`;
+}
+
 /** 从消息数组取最后一条用户文本 */
 export function lastUserText(messages) {
   if (!Array.isArray(messages)) return "";

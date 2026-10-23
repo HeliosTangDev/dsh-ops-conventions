@@ -20,6 +20,7 @@ import {
   normalizeSessionId,
   projectionFileCandidates,
   lastUserText,
+  maintHintText,
   readVersion,
   reminderText,
   resolveLogFile,
@@ -109,6 +110,7 @@ export function apply(ctx, config = {}) {
   let globalReadIndex = false;
   let globalReadTodo = false;
   let globalStructChecked = {};
+  let globalMaintSeen = 0;
   let globalTodoChecked = false; // 无会话时（子代理等）的「跑过待办校验器」标记
   const blockedTools =
     Array.isArray(config.blockedTools) && config.blockedTools.length > 0
@@ -140,6 +142,7 @@ export function apply(ctx, config = {}) {
   const STRUCT_CHECKED = Symbol.for("dsh.opsConventions.structChecked");
   const LAST_TEXT = Symbol.for("dsh.opsConventions.lastUserText");
   const COMPACT_SEEN = Symbol.for("dsh.opsConventions.compactionSeen");
+  const MAINT_SEEN = Symbol.for("dsh.opsConventions.maintSeen");
 
   ctx.on(
     "agent/pre-step",
@@ -173,6 +176,31 @@ export function apply(ctx, config = {}) {
               },
             }),
           ];
+        }
+
+        // 维护报告有 Issues → 自动把摘要带进来（每条报告只带一次；没有 Issues 零注入）
+        try {
+          const rp = process.env.OPS_MAINT_REPORT || "D:\\software\\ToolsDev\\tasks\\MAINT-LATEST.md";
+          if (existsSyncSafe(rp)) {
+            const mt = statSync(rp).mtimeMs;
+            const seen = sess ? sess[MAINT_SEEN] : globalMaintSeen;
+            if (seen !== mt) {
+              const hint = maintHintText(readFileSync(rp, "utf8"));
+              if (sess) sess[MAINT_SEEN] = mt; else globalMaintSeen = mt;
+              if (hint) {
+                log(`inject maint-issues session=${sid} chars=${hint.length}`);
+                messages = [
+                  ...messages,
+                  createUserMessage({
+                    content: [{ type: "text", text: hint }],
+                    source: { kind: "plugin:dsh-ops-conventions", plugin: "dsh-ops-conventions", form: "instructions" },
+                  }),
+                ];
+              }
+            }
+          }
+        } catch (err) {
+          log(`maint hint error: ${err?.message ?? String(err)}`);
         }
 
         // 会话被自动压缩过 → 次数增加时注入一次提示。
