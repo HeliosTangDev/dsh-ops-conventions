@@ -33,12 +33,20 @@
 ```bash
 git clone https://github.com/HeliosTangDev/dsh-ops-conventions.git
 cd dsh-ops-conventions
-node install.mjs                       # 默认装到 ~/.dsh/profiles/desktop
-node install.mjs /path/to/profile      # 指定 profile
+node install.mjs                                # 默认装到 ~/.dsh/profiles/desktop，依赖钉 GitHub latest 固定名 tgz
+node install.mjs /path/to/profile               # 指定 profile
+node install.mjs /path/to/profile --pin 0.5.10  # 钉具体版本（用版本名资产）
+node install.mjs /path/to/profile --pin file:D:/pkg/dsh-ops-conventions-0.5.10.tgz   # 钉本地包或任意 URL
+node install.mjs /path/to/profile --pin=https://...                                   # 等号写法同上
+node install.mjs /path/to/profile --no-pin      # 只写裸版本号（pnpm 会去 npm 找，通常不可达）
 node install.mjs /path/to/profile --uninstall   # 卸载
 ```
 
-它会：复制到 `<profile>/node_modules/dsh-ops-conventions`、在 `package.json` 的 `dependencies` 登记、把包名加进 `dsh.profile.bundles`（不加不会被加载）。
+它会：复制到 `<profile>/node_modules/dsh-ops-conventions`、在 `package.json` 的 `dependencies` 登记（**默认钉 GitHub latest 固定名 tgz**，不用裸版本号——npm 上没有这个包）、把包名加进 `dsh.profile.bundles`（不加不会被加载）。
+
+**自带防炸**：写 `package.json` 前先备份 `package.json.bak-<时间>`；写完读回自检「无 BOM + JSON 可解析 + 依赖与 bundles 已生效」，任一项不过就**自动回滚并以退出码 1 结束**。
+
+> 为什么在意 BOM：宿主读 profile 清单是 `readFileSync(utf8)` + 直接 `JSON.parse`，带 3 字节 BOM 就抛 `DesktopHostFatalError` 静默退出，界面表现是「装完插件、重启、双击没反应」（2026-10-24 连崩 7 次即此，见 CHANGELOG）。所以装插件走这条 node 命令，**不要**手写 PowerShell 改这个文件：本机 `Set-Content -Encoding utf8` 在 PowerShell 5.1 下会写 BOM。
 
 ### 方式二：手动
 
@@ -50,6 +58,8 @@ node install.mjs /path/to/profile --uninstall   # 卸载
    ```
 
 > 注意：`package.json` 里必须有 `dsh.bundle.patch` 指向 `cordis.patch.yml`（本包已带）。缺了它，插件管理器会报「没有声明组合包」，且**不会被加载**。
+>
+> 手改时**别用 PowerShell 的 `Set-Content -Encoding utf8` / `Out-File`**：本机是 PowerShell 5.1，它们会把文件写成带 UTF-8 BOM，宿主启动直接 `DesktopHostFatalError`（无任何界面提示）。用编辑器保存为「UTF-8 无 BOM」，或干脆用 `node install.mjs`。
 
 ### 装完
 

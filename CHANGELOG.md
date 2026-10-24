@@ -1,3 +1,13 @@
+## 未发布
+
+### install.mjs：把「钉依赖」收进安装脚本，装插件不再需要手写 PowerShell
+
+- 事故背景（2026-10-24）：桌面端 2:11:54–2:20:27 连崩 7 次，根因是 profile 的 `package.json` 被 `ConvertTo-Json | Set-Content -Encoding utf8` 写成带 UTF-8 BOM；宿主 `readProfileManifest` 是 `readFileSync(utf8)` + 直接 `JSON.parse`，遇 BOM 抛 `DesktopHostFatalError` 后静默退出，现象「双击没反应」。那一步本身属于安装流程（装完门铃把依赖钉到 GitHub tarball），却落到了手写 PowerShell 上——所以把这一步收进脚本。
+- 默认行为改为钉 `https://github.com/HeliosTangDev/dsh-ops-conventions/releases/latest/download/dsh-ops-conventions.tgz`；新增 `--pin <版本|URL|file:路径>`（版本号自动展开成版本名资产 URL）、`--pin=` 等号写法、`--no-pin`（保留旧行为：裸版本号）与 `-h/--help`。
+- 写盘防炸：写前备份 `package.json.bak-<时间>`；写后读回自检「无 BOM + JSON 可解析 + `dependencies` 与 `bundles` 均已生效」，失败自动回滚并以退出码 1 结束。
+- 实测（临时 profile，不碰真实配置）：默认 712 B、`--pin 0.5.10` 720 B、`file:` 674 B、`--no-pin` 617 B —— 全部无 BOM、无 CRLF、2 空格缩进；连跑两次文件哈希一致（幂等）；`dump-config` 退出码 0、1276 行、含 `# == dsh-ops-conventions`；`--uninstall` 后依赖、bundles、`node_modules` 目录均清干净；`--pin` 缺值退出码 1。
+- README 安装段同步：用法表格、默认钉 URL 的理由，以及「手改清单别用 PowerShell `Set-Content -Encoding utf8`」的告警。
+
 ## 0.5.10 — 2026-10-22
 
 ### 改动
