@@ -9,6 +9,7 @@ import {
   compactionStats,
   denyReason,
   isBlockedTool,
+  isCheckerCommandSafe,
   isIndexRead,
   isShellWrite,
   isTodoCheck,
@@ -118,6 +119,8 @@ export function apply(ctx, config = {}) {
     Array.isArray(config.blockedTools) && config.blockedTools.length > 0
       ? config.blockedTools
       : DEFAULT_BLOCKED_TOOLS;
+  // 拒绝理由里直接给出的校验器命令（profile 可配；不配则用通用提示）
+  const todoCheckCmd = typeof config.todoCheckCmd === "string" ? config.todoCheckCmd : "";
 
   function log(line) {
     try {
@@ -257,10 +260,11 @@ export function apply(ctx, config = {}) {
     "tools/pre-execute",
     async (exec, next) => {
       try {
-        const writeAttempt = needsGuard(exec.name, exec.arguments);
+        // 校验器白名单：待办/结构检查器是「解锁动作」，必须先放行，否则会死锁。
+        // 严格：只认单条校验器命令（禁止 ; && || | 与文件重定向）。
+        if (isCheckerCommandSafe(exec.name, exec.arguments)) return next();
+        const writeAttempt = needsGuard(exec.name, exec.arguments, blockedTools);
         if (!writeAttempt) return next();
-        // 结构检查器本身永远放行：否则「先跑检查器」会被结构门反过来挡住（死锁）
-        if (structCheckIds(exec.name, exec.arguments).length > 0) return next();
         const sess = exec?.agent?.session;
         // 有会话用会话标记；无会话（子代理等）用全局标记，不能直接放行
         const idxRead = sess ? !!sess[READ_INDEX] : globalReadIndex;
@@ -301,7 +305,10 @@ export function apply(ctx, config = {}) {
         log(`guard deny session=${sid} tool=${exec.name} v${version} needTodo=${needTodo}`);
         return {
           kind: "deny",
-          reason: denyReason(indexPath, version, existsSyncSafe(todoFile) ? todoFile : null),
+          reason: denyReason(indexPath, version, existsSyncSafe(todoFile) ? todoFile : null, todoCheckCmd, {
+            indexRead: idxRead,
+            todoChecked: todoDone,
+          }),
         };
       } catch (err) {
         log(`guard error: ${err?.message ?? String(err)}`);

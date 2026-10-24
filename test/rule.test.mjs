@@ -12,6 +12,7 @@ import {
   isIndexRead,
   isShellWrite,
   isTodoCheck,
+  isCheckerCommandSafe,
   isWriteTool,
   needsGuard,
   normalizeSessionId,
@@ -273,4 +274,42 @@ test("维护报告摘要：无 Issues 不注入，有 Issues 带出来", () => {
   assert.equal(maintHintText("# x\n"), "");
   const h = maintHintText("# x\n\n## Issues\n- a broken\n- b broken\n\n## Actions taken\n");
   assert.ok(h.includes("[维护报告] 2 项待处理"), h);
+});
+
+// ---- 2026-10-24：校验器白名单 / blockedTools 生效 / cmd 绕过 ----
+
+test("校验器白名单：单条命令放行，串联/管道/文件重定向拒绝", () => {
+  const ps = "powershell -NoProfile -ExecutionPolicy Bypass -File D:\\software\\ToolsUse\\_tools\\todo\\todo_check.ps1";
+  assert.equal(isCheckerCommandSafe("pwsh", { command: ps }), true);
+  assert.equal(isCheckerCommandSafe("pwsh", { command: ps + " 2>&1" }), true);
+  assert.equal(isCheckerCommandSafe("pwsh", { command: ps + " ; Remove-Item D:\\x -Force" }), false);
+  assert.equal(isCheckerCommandSafe("pwsh", { command: ps + " | iex" }), false);
+  assert.equal(isCheckerCommandSafe("pwsh", { command: ps + " > C:\\x.txt" }), false);
+  assert.equal(isCheckerCommandSafe("read", { file_path: "D:\\x\\todo_check.ps1" }), false);
+  assert.equal(isCheckerCommandSafe("pwsh", { command: "python D:\\software\\ToolsUse\\_tools\\misc\\tools_check.py" }), true);
+});
+
+test("拒绝理由只报缺失项，并给可执行校验器命令", () => {
+  const both = denyReason("D:/x/INDEX.md", "60", "D:/x/tasks/OPEN.md");
+  assert.ok(both.includes("INDEX.md"));
+  assert.ok(both.includes("todo_check.ps1"));
+  const onlyTodo = denyReason("D:/x/INDEX.md", "60", "D:/x/tasks/OPEN.md", "", { indexRead: true });
+  assert.ok(!onlyTodo.includes("read 约定索引"));
+  assert.ok(onlyTodo.includes("todo_check.ps1"));
+  const onlyIndex = denyReason("D:/x/INDEX.md", "60", "D:/x/tasks/OPEN.md", "", { indexRead: false, todoChecked: true });
+  assert.ok(onlyIndex.includes("read 约定索引"));
+  assert.ok(!onlyIndex.includes("todo_check.ps1"));
+});
+
+test("blockedTools 真正生效：点名的 shell 只读命令也要先读清单", () => {
+  assert.equal(needsGuard("pwsh", { command: "Get-Date" }), false);
+  assert.equal(needsGuard("pwsh", { command: "Get-Date" }, ["pwsh", "bash"]), true);
+  assert.equal(needsGuard("cmd", { command: "dir" }, ["cmd"]), true);
+});
+
+test("shell 写识别：cmd 绕过写法被拦", () => {
+  assert.equal(isShellWrite("cmd", { command: "cmd /c todo_check.cmd" }), true);
+  assert.equal(isShellWrite("pwsh", { command: "Invoke-Expression $x" }), true);
+  assert.equal(isShellWrite("pwsh", { command: "forfiles /p D:\\ /m * /c del" }), true);
+  assert.equal(isShellWrite("pwsh", { command: "Get-Date" }), false);
 });

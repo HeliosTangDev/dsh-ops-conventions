@@ -181,10 +181,12 @@ export function isReadOnlyTool(name) {
  * - shell：只拦命令串里的写操作 → 只读命令不需要
  * - 其余一律需要（内置写工具、MCP 未知工具、`dshm_*`、将来新增的任何工具）→ **未知即拦**
  */
-export function needsGuard(name, args) {
+export function needsGuard(name, args, blocked = DEFAULT_BLOCKED_TOOLS) {
   const n = String(name ?? "").trim();
   if (!n) return true; // 名字缺失，保守拦
-  if (isWriteTool(n)) return true; // 显式写类优先（如 add_skill 不能被 "skill" 只读后缀放行）
+  // 配置里点名的工具一律视为"动手"（含 shell：此时只读命令也要先读清单）
+  if (isBlockedTool(n, blocked)) return true;
+  if (isWriteTool(n, blocked)) return true; // 显式写类优先（如 add_skill 不能被 "skill" 只读后缀放行）
   if (isReadOnlyTool(n)) return false;
   if (SHELL_TOOL.test(n)) return isShellWrite(n, args);
   return true;
@@ -205,6 +207,9 @@ const SHELL_WRITE = new RegExp(
     '\\bnpm\\s+(?:i|install|uninstall|publish)\\b',
     '\\bnode\\s+\\S*release\\.mjs\\b',
     '\\bschtasks\\b|\\breg\\s+(?:add|delete|import)\\b',
+    '\\bforfiles\\b|\\bcertutil\\b|\\bbitsadmin\\b',
+    '\\b(?:invoke-expression|iex|start-process)\\b',
+    '\\b(?:cmd|powershell|pwsh)(?:\\.exe)?\\s+/(?:c|k)\\b',
   ].join('|'),
   'i',
 );
@@ -276,6 +281,25 @@ export function isTodoCheck(name, args) {
   return false;
 }
 
+/**
+ * 校验器类命令的严格白名单（2026-10-24）：待办/结构检查器必须能跑，否则死锁。
+ * 只放行「单条校验器命令」：出现串联（; && ||）、管道（|）或文件重定向（> 文件）一律不算。
+ * 允许 2>&1 / 2>nul / >nul / 2>$null 这类无副作用的重定向。
+ */
+export function isCheckerCommandSafe(name, args) {
+  if (!SHELL_TOOL.test(String(name ?? "").trim())) return false;
+  const isChecker = isTodoCheck(name, args) || structCheckIds(name, args).length > 0;
+  if (!isChecker) return false;
+  for (const raw of collectStrings(args)) {
+    const s = String(raw);
+    // 先剥掉无副作用重定向（2>&1 / 2>nul / >nul / 2>$null），再判串联与重定向
+    const stripped = s.replace(/[0-9*]?>\s*(&[12]|nul\b|\$null)/gi, "");
+    if (/[;&|]/.test(stripped)) return false;
+    if (/>/.test(stripped)) return false;
+  }
+  return true;
+}
+
 // ---- 通用结构门（2026-10-22）：写某区域前，本会话必须跑过该区域的结构检查器 ----
 // 加区域只加配置，不改代码。
 export const STRUCT_GATES = [
@@ -333,13 +357,19 @@ export function touchesToolArea(args) {
   }
   return false;
 }
-/** 硬拦截时回给模型的拒绝理由（要能直接照做） */
-export function denyReason(indexPath, version, todoPath) {
+/** 硬拦截时回给模型的拒绝理由（只报缺的那几项，且给可直接执行的命令） */
+export function denyReason(indexPath, version, todoPath, todoCheckCmd, flags = {}) {
   const v = version ? ` v${version}` : "";
-  const parts = [`read 约定索引 ${indexPath}`];
-  if (todoPath) {
-    parts.push("运行待办校验器 todo_check.ps1（读待办镜像不算；报待办只贴它输出）");
+  const parts = [];
+  if (!flags.indexRead) parts.push(`read 约定索引 ${indexPath}`);
+  if (todoPath && !flags.todoChecked) {
+    parts.push(
+      todoCheckCmd
+        ? `运行待办校验器：${todoCheckCmd}`
+        : "运行待办校验器 todo_check.ps1 / todo.cmd（只读型命令，不要再套 ; 或 |）",
+    );
   }
+  if (parts.length === 0) parts.push(`read 约定索引 ${indexPath}`);
   return (
     `[操作约定${v}｜硬拦截] 本会话还没 ` + parts.join("，也没 ") + "。做完后" +
     "执行对应清单（ops-scripts/notes/files/check/longtask/dsh），再重试本次写操作；跳过=未完成。"

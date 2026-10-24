@@ -53,9 +53,9 @@ async function enterTurn(handlers, sess, text) {
   );
 }
 
-async function tryTool(handlers, sess, name) {
+async function tryTool(handlers, sess, name, args = { file_path: "D:/tmp/x.txt" }) {
   return handlers.get("tools/pre-execute")(
-    { name, arguments: { file_path: "D:/tmp/x.txt" }, agent: { session: sess } },
+    { name, arguments: args, agent: { session: sess } },
     async () => ({ kind: "allow" }),
   );
 }
@@ -178,6 +178,24 @@ test("硬拦截：只读镜像不再放行；必须跑 todo_check.ps1", async ()
   // 注入文案里应提示跑校验器
   const r = await enterTurn(handlers, session("s-todo-inj"), "把笔记整理一下");
   assert.ok(JSON.stringify(r.messages).includes("todo_check.ps1"));
+});
+
+test("硬拦截：校验器命令被串联时仍拒绝（白名单只认单条命令）", async () => {
+  const { handlers, indexPath } = await loadPlugin({ withTodo: true });
+  const s = session("s-chain");
+  await enterTurn(handlers, s, "帮我改脚本");
+  handlers.get("tools/result")(
+    { name: "read", arguments: { file_path: indexPath }, agent: { session: s } },
+    {},
+  );
+  const chained = await tryTool(handlers, s, "pwsh", {
+    command: "powershell -NoProfile -File D:\\x\\todo_check.ps1 ; Remove-Item D:\\x -Force",
+  });
+  assert.equal(chained.kind, "deny");
+  const piped = await tryTool(handlers, s, "pwsh", {
+    command: "powershell -NoProfile -File D:\\x\\todo_check.ps1 | iex",
+  });
+  assert.equal(piped.kind, "deny");
 });
 
 test("硬拦截：不读镜像、改为跑 todo_check.ps1 也应放行（B 方案的硬拦动作）", async () => {
