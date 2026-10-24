@@ -129,28 +129,36 @@ test("注入：下一轮即注入（含闲聊），同会话同版本只一次",
   assert.equal(r5.messages.length, 2);
 });
 
-test("硬拦截：镜像存在但未读 → 读过 INDEX 仍被拒；读了镜像才放行", async () => {
+test("硬拦截：只读镜像不再放行；必须跑 todo_check.ps1", async () => {
   const { handlers, indexPath, todoPath } = await loadPlugin({ withTodo: true });
   const s = session("s-todo");
   await enterTurn(handlers, s, "帮我改个脚本");
 
-  // 只读 INDEX：仍应被拒，且拒绝理由点名 OPEN.md
+  // 读 INDEX + 读镜像 → 还是被拒（读规则不算校验）
   handlers.get("tools/result")(
     { name: "read", arguments: { file_path: indexPath }, agent: { session: s } },
     {},
   );
-  const stillDenied = await tryTool(handlers, s, "write");
-  assert.equal(stillDenied.kind, "deny");
-  assert.ok(stillDenied.reason.includes("OPEN.md"));
-
-  // 读了镜像之后放行
   handlers.get("tools/result")(
     { name: "read", arguments: { file_path: todoPath }, agent: { session: s } },
     {},
   );
+  const stillDenied = await tryTool(handlers, s, "write");
+  assert.equal(stillDenied.kind, "deny");
+  assert.ok(stillDenied.reason.includes("todo_check.ps1"));
+
+  // 跑过校验器之后才放行
+  handlers.get("tools/result")(
+    {
+      name: "pwsh",
+      arguments: { command: "powershell -NoProfile -File D:\\software\\ToolsUse\\_tools\\todo\\todo_check.ps1" },
+      agent: { session: s },
+    },
+    {},
+  );
   assert.equal((await tryTool(handlers, s, "write")).kind, "allow");
 
-  // 镜像读取失败（isError）不算已读
+  // 校验器失败（isError）不算
   const s2 = session("s-todo-fail");
   await enterTurn(handlers, s2, "整理一下目录");
   handlers.get("tools/result")(
@@ -158,14 +166,18 @@ test("硬拦截：镜像存在但未读 → 读过 INDEX 仍被拒；读了镜�
     {},
   );
   handlers.get("tools/result")(
-    { name: "read", arguments: { file_path: todoPath }, agent: { session: s2 } },
+    {
+      name: "pwsh",
+      arguments: { command: "powershell -NoProfile -File D:\\software\\ToolsUse\\_tools\\todo\\todo_check.ps1" },
+      agent: { session: s2 },
+    },
     { isError: true },
   );
   assert.equal((await tryTool(handlers, s2, "edit")).kind, "deny");
 
-  // 注入文案里应出现镜像路径
+  // 注入文案里应提示跑校验器
   const r = await enterTurn(handlers, session("s-todo-inj"), "把笔记整理一下");
-  assert.ok(JSON.stringify(r.messages).includes("OPEN.md"));
+  assert.ok(JSON.stringify(r.messages).includes("todo_check.ps1"));
 });
 
 test("硬拦截：不读镜像、改为跑 todo_check.ps1 也应放行（B 方案的硬拦动作）", async () => {

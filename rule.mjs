@@ -88,7 +88,7 @@ export function readVersion(file) {
 
 /** 注入内容（强制措辞；含 6 行常驻约定，避免依赖会被抽取重写的 profile 段） */
 export function reminderText(version, indexPath, todoPath) {
-  const todo = todoPath ? `；并 read 待办镜像 ${todoPath} 或运行 todo_check.ps1（二选一；报待办前必须先跑校验，镜像只是快照）` : "";
+  const todo = todoPath ? "；并运行待办校验器 todo_check.ps1（读镜像不算；报待办只贴它输出）" : "";
   return (
     `[操作约定 v${version}｜强制] 动手前必须 read ${indexPath} 并执行对应清单` + todo +
     "；收尾按 ops-check：记忆归并、清 _tasks、归档登记。" +
@@ -334,11 +334,11 @@ export function touchesToolArea(args) {
   return false;
 }
 /** 硬拦截时回给模型的拒绝理由（要能直接照做） */
-export function denyReason(indexPath, version, todoPath, todoRead) {
+export function denyReason(indexPath, version, todoPath) {
   const v = version ? ` v${version}` : "";
   const parts = [`read 约定索引 ${indexPath}`];
-  if (todoPath && !todoRead) {
-    parts.push(`read 待办镜像 ${todoPath}，或运行 todo_check.ps1（二选一；它逐条跑校验给出实时结果，镜像是快照）`);
+  if (todoPath) {
+    parts.push("运行待办校验器 todo_check.ps1（读待办镜像不算；报待办只贴它输出）");
   }
   return (
     `[操作约定${v}｜硬拦截] 本会话还没 ` + parts.join("，也没 ") + "。做完后" +

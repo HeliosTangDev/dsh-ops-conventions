@@ -264,10 +264,9 @@ export function apply(ctx, config = {}) {
         const sess = exec?.agent?.session;
         // 有会话用会话标记；无会话（子代理等）用全局标记，不能直接放行
         const idxRead = sess ? !!sess[READ_INDEX] : globalReadIndex;
-        const todoRead = sess
-          ? !!sess[READ_TODO] || !!sess[TODO_CHECKED]
-          : globalReadTodo || globalTodoChecked;
-        const needTodo = existsSyncSafe(todoFile) && !todoRead;
+        // 待办门只认「真的跑过校验器」：读 OPEN.md 只是读规则，不再算数
+        const todoDone = sess ? !!sess[TODO_CHECKED] : globalTodoChecked;
+        const needTodo = existsSyncSafe(todoFile) && !todoDone;
         if (idxRead && !needTodo) return next();
         // 第三道门：写某个区域之前，本会话必须跑过该区域的结构检查器（通用，按路径匹配）
         const gateIds = structGatesFor(exec.arguments);
@@ -287,7 +286,7 @@ export function apply(ctx, config = {}) {
             };
           }
         }
-        if (!sess) log(`guard no-session using-global idx=${idxRead} todo=${todoRead} tool=${exec.name}`);
+        if (!sess) log(`guard no-session using-global idx=${idxRead} todo=${todoDone} tool=${exec.name}`);
         if (!enforce) {
           log(`guard skip reason=enforce-off tool=${exec.name}`);
           return next();
@@ -302,7 +301,7 @@ export function apply(ctx, config = {}) {
         log(`guard deny session=${sid} tool=${exec.name} v${version} needTodo=${needTodo}`);
         return {
           kind: "deny",
-          reason: denyReason(indexPath, version, existsSyncSafe(todoFile) ? todoFile : null, sess?.[READ_TODO]),
+          reason: denyReason(indexPath, version, existsSyncSafe(todoFile) ? todoFile : null),
         };
       } catch (err) {
         log(`guard error: ${err?.message ?? String(err)}`);

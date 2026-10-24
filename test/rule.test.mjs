@@ -145,21 +145,20 @@ test("硬拦截：已读待办镜像的判定", () => {
   assert.equal(isTodoRead("read", { file_path: todo }, ""), false);
 });
 
-test("硬拦截：镜像未读时拒绝理由要点名 OPEN.md", () => {
+test("硬拦截：有镜像时必须跑校验器（读镜像不算）", () => {
   const todo = "D:/x/tasks/OPEN.md";
-  const notRead = denyReason("D:/x/INDEX.md", "17", todo, false);
-  assert.ok(notRead.includes(todo), "未读镜像时应点名路径");
-  const read = denyReason("D:/x/INDEX.md", "17", todo, true);
-  assert.ok(!read.includes(todo), "已读镜像后不应再点名");
-  const noMirror = denyReason("D:/x/INDEX.md", "17", null, false);
-  assert.ok(!noMirror.includes("OPEN.md"));
+  const needCheck = denyReason("D:/x/INDEX.md", "17", todo);
+  assert.ok(needCheck.includes("todo_check.ps1"), "应要求跑校验器");
+  const noMirror = denyReason("D:/x/INDEX.md", "17", null);
+  assert.ok(!noMirror.includes("todo_check.ps1"), "没有镜像时不强求校验器");
 });
 
-test("注入文案：给出镜像路径时才提示读它", () => {
+test("注入文案：给出镜像路径时提示跑校验器", () => {
   const withTodo = reminderText("18", "D:/x/INDEX.md", "D:/x/tasks/OPEN.md");
-  assert.ok(withTodo.includes("D:/x/tasks/OPEN.md"));
+  assert.ok(withTodo.includes("todo_check.ps1"));
+  assert.ok(!withTodo.includes("二选一"));
   const withoutTodo = reminderText("18", "D:/x/INDEX.md");
-  assert.ok(!withoutTodo.includes("待办镜像"));
+  assert.ok(!withoutTodo.includes("待办校验器"));
 });
 test("硬拦截：跑待办校验器（todo_check.ps1 / todo.cmd）的识别", () => {
   assert.equal(
