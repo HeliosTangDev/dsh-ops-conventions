@@ -71,7 +71,7 @@ test("注入文本：含版本号、索引路径与常驻约定", () => {
   const t = reminderText("8", "D:/x/INDEX.md");
   assert.ok(t.includes("v8"));
   assert.ok(t.includes("D:/x/INDEX.md"));
-  for (const s of ["待会儿做", "结论与入口", "备份", "哈希", "由你定", "只改工具区", "换会话自决", "开场先扫", "_tasks", "不许吞", "绝对路径", "不问", "推断", "放宽", "A/B/C", "_secrets", "主线", "可修", "candidates"]) {
+  for (const s of ["待会儿做", "结论与入口", "备份", "哈希", "由你定", "只改工具区", "换会话自决", "开场先扫", "_tasks", "不许吞", "绝对路径", "不问", "推断", "旧快照", "放宽", "A/B/C", "_secrets", "主线", "可修", "candidates"]) {
     assert.ok(t.includes(s), `missing: ${s}`);
   }
   assert.ok(t.length < 950, `too long: ${t.length}`);
