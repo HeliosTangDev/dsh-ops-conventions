@@ -11,6 +11,8 @@ const srcDir = fileURLToPath(new URL("..", import.meta.url));
 
 async function loadPlugin(opts = {}) {
   const dir = mkdtempSync(join(tmpdir(), "opsconv-guard-"));
+  // 测试隔离：别把本机真实维护报告注入进来（否则消息数受机器状态影响）
+  process.env.OPS_MAINT_REPORT = join(dir, "MAINT-NONE.md");
   const skills = join(dir, "skills");
   mkdirSync(skills, { recursive: true });
   writeFileSync(join(skills, "INDEX.md"), "# index\n", "utf8");
