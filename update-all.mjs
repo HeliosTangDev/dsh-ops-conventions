@@ -34,7 +34,9 @@ function listProfiles(home) {
   if (!existsSync(dir)) return [];
   return readdirSync(dir, { withFileTypes: true })
     .filter((e) => e.isDirectory())
-    .map((e) => join(dir, e.name));
+    .map((e) => join(dir, e.name))
+    // 只认真 profile：必须有 package.json（跳过 _backups 这类目录）
+    .filter((p) => existsSync(join(p, "package.json")));
 }
 
 function installedVersion(profilePath) {
