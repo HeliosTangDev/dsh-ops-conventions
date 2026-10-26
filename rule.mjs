@@ -86,30 +86,24 @@ export function readVersion(file) {
   return "1";
 }
 
-/** 注入内容（强制措辞；含 6 行常驻约定，避免依赖会被抽取重写的 profile 段） */
-export function reminderText(version, indexPath, todoPath) {
-  const todo = todoPath ? "；并运行待办校验器 todo_check.ps1（读镜像不算；报待办只贴它输出）" : "";
+/**
+ * 注入内容（通用版：不含任何个人约定）。
+ * @param {string} version 约定版本
+ * @param {string} indexPath INDEX.md 路径
+ * @param {object} [opts] { extra?: string } extra 用于用户自定义追加（config.bellExtra）
+ */
+export function reminderText(version, indexPath, opts = {}) {
+  const extra = typeof opts.extra === "string" && opts.extra.trim() ? "\n" + opts.extra.trim() : "";
   return (
-    `[操作约定 v${version}｜强制] 动手前必须 read ${indexPath} 并执行对应清单` + todo +
-    "；收尾按 ops-check：记忆归并、清 _tasks、归档登记。" +
-    "开场先扫 tasks（OPEN.md+MAINT-LATEST Issues）与 sessions，到期项当面提醒，清 _tasks 残留。" +
-    "失败分类报原文，不许吞或粉饰；删/移/覆盖前确认绝对路径，先复制成功再删旧。" +
-    "遇到问题先归因：笔误改掉即可；逻辑错误/考虑不周必须写教训并改机制补救，不能只说下次注意。" +
-    "不问「要不要」；要拍板给 A/B/C+代价；结论与入口一次列全（该做/已做/要你做/可选），直白中文不自造术语。" +
-    "结尾两段：待办在前（要你做/在等/待拍板；要本人做写命令+全路径参数，不写「建议」），任务未完成与等待只进待办；自检只写报错/未执行/失败，可修当场修并复检。" +
-    "mem candidates 有候选就提醒升门铃，由你定。" +
-    "提到约定先判层落位：跨类进门铃、某类进清单、参考进偏好/实体；只写记忆=没写成，落位后读回。" +
-    "承诺不落空：不说「待会儿做」，写「已落位」须带读回证据。" +
-    "已决定不做的不再提；待办只认 todo_check 输出，新条目先进 todo.json。" +
-    "harness：改配置先备份 profile 四件套并备回滚，只改最小项、改后验证能启动；凭证只从 _secrets 读，不贴聊天不写记忆；不擅自升级/重启。" +
-    "一主线一会话，别的事记待办；不列多方案让人挑。" +
-    "结论带证据，查不到说查不到、推断标「推断」；旧快照/记忆卡只作线索，报状态必须在本轮内跑现场命令：更早的数字一律作废，写回复前重跑；同轮内若发生写/推送/改文件也要重跑。每条状态附命令与采样时间（例：`git status -sb @20:05`），没带=没查；工作区外写先申请放宽。" +
-    "改动先备份可回滚（哈希证明）；收益＜成本就停；只改工具区，系统级交本人；换会话自决，仅「压缩提示」判一次；skill 报 unknown 直接 read。"
+    `[操作约定 v${version}] 动手前必须 read ${indexPath} 并执行对应清单；同一会话同一版本只提醒一次。` +
+    "收尾按清单自检；清单正文以 INDEX.md 为准，本消息只是提醒。" +
+    "若 skill 工具报 unknown（旧会话快照所致），直接 read 该文件即可，不要跳过。" +
+    extra
   );
 }
 
-/** 维护报告的 Issues 摘要：没有 Issues 返回 ""（正常情况零注入成本） */
-export function maintHintText(report) {
+/** 维护报告的 Issues 摘要：没有 Issues 返回 ""（正常情况零注入成本）；reportPath 用于提示位置 */
+export function maintHintText(report, reportPath = "") {
   const s = String(report ?? "");
   const m = s.match(/##\s*Issues\s*\n([\s\S]*?)(?:\n##\s|$)/);
   if (!m) return "";
@@ -120,7 +114,8 @@ export function maintHintText(report) {
   if (!items.length) return "";
   const head = items.slice(0, 4).join("；");
   const more = items.length > 4 ? ` 等 ${items.length} 项` : "";
-  return `[维护报告] ${items.length} 项待处理：${head}${more}（D:\\software\\ToolsDev\\tasks\\MAINT-LATEST.md）`;
+  const where = reportPath ? `（${reportPath}）` : "";
+  return `[维护报告] ${items.length} 项待处理：${head}${more}${where}`;
 }
 
 /** 从消息数组取最后一条用户文本 */
@@ -283,13 +278,13 @@ export function isTodoCheck(name, args) {
 }
 
 /**
- * 校验器类命令的严格白名单（2026-10-24）：待办/结构检查器必须能跑，否则死锁。
+ * 校验器类命令的严格白名单：待办/结构检查器必须能跑，否则死锁。
  * 只放行「单条校验器命令」：出现串联（; && ||）、管道（|）或文件重定向（> 文件）一律不算。
  * 允许 2>&1 / 2>nul / >nul / 2>$null 这类无副作用的重定向。
  */
-export function isCheckerCommandSafe(name, args) {
+export function isCheckerCommandSafe(name, args, gates = []) {
   if (!SHELL_TOOL.test(String(name ?? "").trim())) return false;
-  const isChecker = isTodoCheck(name, args) || structCheckIds(name, args).length > 0;
+  const isChecker = isTodoCheck(name, args) || structCheckIds(name, args, gates).length > 0;
   if (!isChecker) return false;
   for (const raw of collectStrings(args)) {
     const s = String(raw);
@@ -301,40 +296,47 @@ export function isCheckerCommandSafe(name, args) {
   return true;
 }
 
-// ---- 通用结构门（2026-10-22）：写某区域前，本会话必须跑过该区域的结构检查器 ----
-// 加区域只加配置，不改代码。
-export const STRUCT_GATES = [
-  {
-    id: "tools",
-    pathRe: /software[\\/](toolsuse|toolsdev)/i,
-    checkRe: /tools_check\.py/i,
-    checker: "python D:\\software\\ToolsUse\\_tools\\misc\\tools_check.py",
-  },
-  {
-    id: "notes",
-    pathRe: /blog[\\/]article[\\/]course/i,
-    checkRe: /notes_check\.py/i,
-    checker: "python D:\\software\\ToolsUse\\_tools\\misc\\notes_check.py",
-  },
-];
+// ---- 通用结构门（可选，默认关闭）：写某区域前，本会话必须跑过该区域的结构检查器 ----
+// 通过配置 structGates: [{ id, pathRe, checkRe, checker }] 启用；发行版不带任何路径。
+export const STRUCT_GATES = [];
+
+/** 从配置生成结构门（正则字符串 → RegExp；配置非法则忽略该项） */
+export function buildStructGates(config = {}) {
+  if (!Array.isArray(config.structGates)) return [];
+  const out = [];
+  for (const g of config.structGates) {
+    try {
+      if (!g || !g.id || !g.checker) continue;
+      out.push({
+        id: String(g.id),
+        pathRe: g.pathRe ? new RegExp(String(g.pathRe), "i") : /$^/,
+        checkRe: g.checkRe ? new RegExp(String(g.checkRe), "i") : /$^/,
+        checker: String(g.checker),
+      });
+    } catch {
+      /* 非法正则跳过 */
+    }
+  }
+  return out;
+}
 
 /** 这次调用命中了哪些结构门（按参数里的路径匹配） */
-export function structGatesFor(args) {
+export function structGatesFor(args, gates = []) {
   const ids = [];
   for (const raw of collectStrings(args)) {
     const s = String(raw).replace(/\\/g, "/");
-    for (const g of STRUCT_GATES) if (g.pathRe.test(s) && !ids.includes(g.id)) ids.push(g.id);
+    for (const g of gates) if (g.pathRe.test(s) && !ids.includes(g.id)) ids.push(g.id);
   }
   return ids;
 }
 
 /** 这条命令是不是某区域的结构检查器（跑过即该门放行） */
-export function structCheckIds(name, args) {
+export function structCheckIds(name, args, gates = []) {
   if (!SHELL_TOOL.test(String(name ?? "").trim())) return [];
   const ids = [];
   for (const raw of collectStrings(args)) {
     const s = String(raw);
-    for (const g of STRUCT_GATES) if (g.checkRe.test(s) && !ids.includes(g.id)) ids.push(g.id);
+    for (const g of gates) if (g.checkRe.test(s) && !ids.includes(g.id)) ids.push(g.id);
   }
   return ids;
 }

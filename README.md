@@ -1,141 +1,112 @@
-# 操作约定注入（dsh-ops-conventions）
+# dsh-ops-conventions（操作约定门铃）
 
-把「操作约定」在**动手前**确定性注入上下文，解决「约定记了但干活时不提就不用」的问题。
+在 AI **动手前**把「你的操作约定清单」确定性地注入一次，并可选地硬拦截写操作，解决「约定记了，但干活时不提就不用」的问题。
+
+> 插件本身**不含任何个人约定**：它只做「提醒 + 拦截 + 配置」。规则内容全部来自你自己的 `INDEX.md`（以及可选的补充文件）。
 
 ## 它做什么
 
-- **版本变化后下一轮就注入，不再等下一个操作轮**：不按「像不像要动手」过滤，闲聊轮也会注入；每会话每版本只注入一次（约 150 token）。
-- **门铃自带 6 行常驻约定**：收尾三件（自检/记忆归并/`_tasks` 清空）、不列多方案、备份回滚、只改工具区、关会话提醒等直接写进门铃，不再依赖可能被 OpenViking 抽取重写的 `profile.md` 段。
-- **同一会话同版本只注入一次**：不刷屏。
-- **约定版本变化自动再提醒**：改 `VERSION` 后，下一轮（任何类型）会重新注入。
-- **注入日志**：每次注入记一行（含选中的约定目录、索引是否存在），生效与否可核对。
-- **硬拦截（默认开）**：操作类轮次里，本会话还没 `read` 过 `INDEX.md` 时，`write`/`edit` 等写类工具会被直接拒绝，并提示先读索引；读过后本会话放行。闲聊轮次不拦；shell 默认不拦（可配置）。
-- **零配置可用**：包内自带 `skills/` 示例清单；也可以指向你自己的目录，或 OpenViking 里存的那份。
-
-## 为什么会有这个插件
-
-作者是一名 DSH 日常用户（学生，用 DSH + OpenViking 管理学习和工具工作流），遇到的问题很具体：
-
-- 把「写脚本前先看清单」「改文件前先备份」这类操作约定写进了 OpenViking 技能和记忆；
-- 但真正干活时，模型并不会稳定地主动去读它们——**约定记了，干活时不提就不用**，等于白记；
-- 靠提示词或 `AGENTS.md` 也不稳：要么每轮全量注入太费 token，要么模型想起来才看。
-
-于是和 AI 助手一起做了这个小插件：每会话每版本注入一条极短的门铃（入口清单路径 + 版本号），约定版本一改，下一轮就重新出现——不等到「像要动手」的那一轮。后来发现「注入了也可能不执行」，就补了硬拦截：操作类轮次里没读索引前，写操作直接过不去。
-
-**关于代码**：需求、取舍、验证由作者决定；具体实现是与 AI 助手协作完成的。
-
-**为什么公开**：相信「约定记了但干活不提就不用」不是个例，才把它整理出来上传，希望能帮到有同样需求的人。如果你遇到同样的问题，欢迎直接拿去用，也欢迎把你的场景告诉我，一起改进。
+- **注入门铃**：每个会话、每个约定版本注入一次，内容 = `read <你的 INDEX.md> 并执行清单` + 可选补充文本；约 1 行，不改 `VERSION` 不会重复刷屏。
+- **版本变化再提醒**：改约定目录里的 `VERSION` 文件后，下一轮（任何轮次）会重新注入。
+- **可选硬拦截**：本会话还没 `read` 过 `INDEX.md` 时，拒绝写类工具（`write`/`edit`/…，可加 `pwsh`/`bash`/`cmd` 等）；读过后本会话放行。
+- **可选待办门**：配置 `todoFile` 后，还要求先跑一次 `todoCheckCmd` 校验器（防止报过时待办）。
+- **可选维护报告摘要**：配置 `maintReport` 后，报告里有 Issues 就注入一条摘要。
+- **可选结构门**：配置 `structGates` 后，写某个区域前必须先跑该区域的结构检查器。
+- **注入日志**：每次注入/拦截都写日志，生效与否可核对。
 
 ## 安装
 
-### 方式一：安装脚本（推荐，跨平台、零依赖）
+### 方式一：安装脚本（推荐）
 
 ```bash
 git clone https://github.com/HeliosTangDev/dsh-ops-conventions.git
 cd dsh-ops-conventions
-node install.mjs                                # 默认装到 ~/.dsh/profiles/desktop，依赖钉 GitHub latest 固定名 tgz
-node install.mjs /path/to/profile               # 指定 profile
-node install.mjs /path/to/profile --pin 0.5.10  # 钉具体版本（用版本名资产）
-node install.mjs /path/to/profile --pin file:D:/pkg/dsh-ops-conventions-0.5.10.tgz   # 钉本地包或任意 URL
-node install.mjs /path/to/profile --pin=https://...                                   # 等号写法同上
-node install.mjs /path/to/profile --no-pin      # 只写裸版本号（pnpm 会去 npm 找，通常不可达）
-node install.mjs /path/to/profile --uninstall   # 卸载
+node install.mjs                                  # 默认装到 ~/.dsh/profiles/desktop
+node install.mjs /path/to/profile                 # 指定 profile
+node install.mjs /path/to/profile --uninstall     # 卸载
 ```
 
-它会：复制到 `<profile>/node_modules/dsh-ops-conventions`、在 `package.json` 的 `dependencies` 登记（**默认钉 GitHub latest 固定名 tgz**，不用裸版本号——npm 上没有这个包）、把包名加进 `dsh.profile.bundles`（不加不会被加载）。
+### 方式二：自己加依赖
 
-**自带防炸**：写 `package.json` 前先备份 `package.json.bak-<时间>`；写完读回自检「无 BOM + JSON 可解析 + 依赖与 bundles 已生效」，任一项不过就**自动回滚并以退出码 1 结束**。
+在 profile 的 `package.json` 里加：
 
-> 为什么在意 BOM：宿主读 profile 清单是 `readFileSync(utf8)` + 直接 `JSON.parse`，带 3 字节 BOM 就抛 `DesktopHostFatalError` 静默退出，界面表现是「装完插件、重启、双击没反应」（2026-10-24 连崩 7 次即此，见 CHANGELOG）。所以装插件走这条 node 命令，**不要**手写 PowerShell 改这个文件：本机 `Set-Content -Encoding utf8` 在 PowerShell 5.1 下会写 BOM。
+```json
+"dsh-ops-conventions": "https://github.com/HeliosTangDev/dsh-ops-conventions/releases/latest/download/dsh-ops-conventions.tgz"
+```
 
-### 方式二：手动
+然后在该 profile 目录执行 `pnpm install`，重启 DSH。
 
-1. 把整个仓库复制到 `<profile>/node_modules/dsh-ops-conventions`；
-2. 编辑 `<profile>/package.json`：
-   ```json
-   "dependencies": { "dsh-ops-conventions": "0.2.0" },
-   "dsh": { "profile": { "bundles": [ ..., "dsh-ops-conventions" ] } }
-   ```
+### 方式三：市场
 
-> 注意：`package.json` 里必须有 `dsh.bundle.patch` 指向 `cordis.patch.yml`（本包已带）。缺了它，插件管理器会报「没有声明组合包」，且**不会被加载**。
->
-> 手改时**别用 PowerShell 的 `Set-Content -Encoding utf8` / `Out-File`**：本机是 PowerShell 5.1，它们会把文件写成带 UTF-8 BOM，宿主启动直接 `DesktopHostFatalError`（无任何界面提示）。用编辑器保存为「UTF-8 无 BOM」，或干脆用 `node install.mjs`。
-
-### 装完
-
-- **热重载**：DSH 插件页 → 找到 `dsh-ops-conventions` → 关掉再打开（改 `skills/` 或配置时不用重启）。
-- 改的是**代码**（`index.mjs` / `rule.mjs`）时，关掉再打开不保证重新 import，**重启 DeepSeek Harness** 最稳。
+在 dsh-m 市场里搜索 `dsh-ops-conventions` 安装。
 
 ## 配置
 
-| 配置项 | 环境变量 | 默认 | 说明 |
-|---|---|---|---|
-| `skillsDir` | `DSH_OPS_CONVENTIONS_DIR` | 包内 `skills/` | 约定目录，需含 `INDEX.md`；`VERSION` 可有可无 |
-| `logFile` | `DSH_OPS_CONVENTIONS_LOG` | `~/.dsh/ops-conventions/ops-conventions.log` | 注入 / 拦截日志 |
-| `enforce` | — | `true` | 是否启用硬拦截；`false` = 只注入门铃 |
-| `blockedTools` | — | `write` `edit` `multi_edit` `apply_patch` `notebook_edit` | 拦截的写类工具名；要连 shell 一起拦就自行加 `bash` / `pwsh` |
-
-解析顺序（会**逐个检查目录里真的有 `INDEX.md`**，取第一个有效的）：
-
-1. 配置项 `skillsDir`
-2. 环境变量 `DSH_OPS_CONVENTIONS_DIR`
-3. **包内 `skills/`**（随包发布，开箱即用）
-4. OpenViking 实际存储：`~/.openviking/data/viking/default/user/default/memories/ops-conventions`
-5. `~/.dsh/ops-conventions/skills`
-
-示例（写进 profile 的 `cordis.patch.yml`）：
+在 profile 的 `cordis.patch.yml` 里追加（所有字段都可选，不配也能用）：
 
 ```yaml
 - id: dsh-ops-conventions
   name: "dsh-ops-conventions"
   config:
-    skillsDir: "D:/my-conventions/skills"
-    enforce: true
-    # blockedTools: ["write", "edit", "bash"]
+    skillsDir: "D:\\my-conventions"          # 你的约定目录（里面放 INDEX.md + VERSION）
+    # bellExtra: "额外的提醒文本"              # 直接追加一行文本
+    # bellExtraFile: "D:\\my-conventions\\BELL.txt"  # 或指向文件（每次注入现读，改文件不用重启）
+    # enforce: false                          # 只提醒、不拦截
+    # blockedTools: ["write","edit","multi_edit","apply_patch","notebook_edit","pwsh","bash"]
+    # todoFile: "D:\\my-work\\tasks\\OPEN.md"
+    # todoCheckCmd: "powershell -NoProfile -ExecutionPolicy Bypass -File D:\\tools\\todo_check.ps1"
+    # maintReport: "D:\\my-work\\tasks\\MAINT-LATEST.md"
+    # structGates:
+    #   - id: docs
+    #     pathRe: "docs[/\\\\]"               # 命中这些路径时……
+    #     checkRe: "docs_check\\.py"          # 这条命令就是该门检查器
+    #     checker: "python D:\\tools\\docs_check.py"
+  disabled: false
 ```
 
-## 约定目录结构
+### 最小约定目录
 
 ```
-skills/
-├── INDEX.md          # 入口清单（注入文本里给的就是它的路径）
-├── VERSION           # 版本号；改它 → 下一次操作轮重新注入
-└── ops-scripts/
-    └── SKILL.md      # 各类清单，INDEX.md 里引用
+D:\my-conventions\
+  INDEX.md     # 你的清单入口（写清“做什么事读哪份清单”）
+  VERSION      # 一个数字；改它 = 让门铃重新注入
 ```
 
-自带 6 类示例：`ops-scripts`（脚本/后台）、`ops-notes`（笔记）、`ops-files`（文件目录）、`ops-check`（自检）、`ops-longtask`（长任务）、`ops-dsh`（DSH/插件）。可以直接改成你自己的。
+`INDEX.md` 示例：
 
-## 机制
+```md
+# 操作约定索引
 
-- 监听 `agent/pre-step`（waterfall），在模型调用前判断最后一条用户消息像不像"要动手"（工具词 或 动作词+对象词）。
-- 命中且该会话该版本未注入过 → 追加一条 `instructions` 来源的消息。
-- **硬拦截**监听 `tools/pre-execute`（waterfall）：当轮用户消息像要动手、且本会话还没**成功** `read` 过 `INDEX.md` 时，对写类工具返回 `deny`（理由里带索引绝对路径），模型照做后重试即可通过；`tools/result` 观察成功的 INDEX 读取后放行。
-- 钩子自身异常一律 **fail-open**（放行）并写日志；`skillsDir` 里没有 `INDEX.md` 时不拦。
-- 任何异常都吞掉，不影响正常对话；多会话各自独立判断。
-- 日志里可核对：`inject vN`、`guard deny`、`guard index-read`、`guard loaded enforce=...`。
+| 要做的事 | 读这份 |
+|---|---|
+| 写/改脚本 | ops-scripts/SKILL.md |
+| 改完验证 | ops-check/SKILL.md |
+```
 
-## 常见问题
+## 不配置会怎样
 
-**Q：插件市场里搜不到？**
-A：市场只索引 npm / GitHub 上的包，本地安装的不会出现在搜索结果里；在「已装」列表里能看到。
+- 使用插件包自带的 `skills/` **示例清单**（会提示你去换成自己的目录）；
+- 只拦截 `write/edit/multi_edit/apply_patch/notebook_edit`；
+- 其余可选功能（待办门/维护摘要/结构门）全部关闭。
 
-**Q：卡片显示「异常：这个包没有声明组合包」？**
-A：`package.json` 缺 `dsh.bundle.patch`。本包已带；如果你自己改了包，记得保留。
+## 验证生效
 
-**Q：模型说 `skill xxx is unknown`？**
-A：那是会话启动时的技能目录快照导致的，与插件无关。直接用 `read` 读注入里给的那个 `INDEX.md` 路径即可。
+```powershell
+Get-Content "$env:USERPROFILE\.dsh\ops-conventions\ops-conventions.log" -Tail 5
+```
 
-**Q：写文件被拒绝，理由是「硬拦截」？**
-A：本会话还没 `read` 过 `INDEX.md`。按理由里给的路径读一次（并执行对应清单），再重试原操作即可；不想要这个行为，把配置 `enforce` 设为 `false`。
+应看到 `plugin loaded  skillsDir=...`、`inject vN chars=...`；被拦截时应看到 `guard deny ...`。
 
-**Q：注入的提醒会显示在对话里？**
-A：会，作为一条来源为插件的消息。长度约 70 token，一个会话只出现一次（版本变了再一次）。
+## 卸载
 
-## License
+```bash
+node install.mjs --uninstall
+```
 
-MIT
+或从 profile `package.json` 删除依赖、`node_modules/dsh-ops-conventions`，并删掉 `cordis.patch.yml` 里对应条目，然后重启。
 
-## Star
+## 边界
 
-如果这个插件对你有用，欢迎在 GitHub 上点个 ⭐ Star，让更多 DSH 用户看到。
+- 这是「提醒执行器」，不是安全边界：它可以挡住误操作，但不能保证模型一定执行清单。
+- 注入/拦截都在本机，不联网、不收集数据。
+- 适配 DSH 0.2.x（Node 22 / 24），MIT 许可。

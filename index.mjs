@@ -9,12 +9,12 @@ import {
   compactionStats,
   denyReason,
   isBlockedTool,
+  buildStructGates,
   isCheckerCommandSafe,
   isIndexRead,
   isShellWrite,
   isTodoCheck,
   isTodoRead,
-  STRUCT_GATES,
   structCheckIds,
   structGatesFor,
   isWriteTool,
@@ -47,20 +47,41 @@ function existsSyncSafe(p) {
  * 让"操作约定"在动手前确定性出现（不依赖记忆召回的运气）：
  *  - 每会话每版本注入一次；VERSION 变了，下一轮就注入（不看轮次类型，闲聊轮也算）
  *  - 硬拦截（enforce，默认开）：操作类轮次里，本会话还没 read INDEX.md 时拒绝写类工具
- * 配置（可选）：
- *  - skillsDir:     约定技能目录（默认 $DSH_OPS_CONVENTIONS_DIR 或 ~/.dsh/ops-conventions/skills）
+ * 配置（可选，全部有默认值，发行版开箱即用）：
+ *  - skillsDir:     约定技能目录（默认 $DSH_OPS_CONVENTIONS_DIR 或包自带 skills/）
  *  - logFile:       注入日志（默认 $DSH_OPS_CONVENTIONS_LOG 或 ~/.dsh/ops-conventions/ops-conventions.log）
  *  - enforce:       是否启用硬拦截（默认 true；false = 只注入门铃）
  *  - blockedTools:  拦截的写类工具名（默认 write/edit/multi_edit/apply_patch/notebook_edit）
+ *  - bellExtra:     追加到门铃末尾的自定义文本（默认无）
+ *  - bellExtraFile: 可选：个人补充规则文件路径；每次注入现读（改文件不必重启）
+ *  - todoFile:      可选：待办镜像文件；配置后写操作还要求先跑 todoCheckCmd（默认关闭）
+ *  - todoCheckCmd:  可选：待办校验器命令（用于拒绝时直接给出可执行命令）
+ *  - maintReport:   可选：维护报告路径；有 Issues 时自动摘要注入（默认关闭）
+ *  - structGates:   可选：结构门数组 [{id, pathRe, checkRe, checker}]（默认关闭）
  */
 export function apply(ctx, config = {}) {
   const skillsDir = resolveSkillsDir(config);
   const logFile = resolveLogFile(config);
   const indexPath = join(skillsDir, "INDEX.md");
   const versionFile = join(skillsDir, "VERSION");
-  // 待办镜像：<约定目录的上一级>\tasks\OPEN.md（如 D:\software\ToolsDev\tasks\OPEN.md）。
-  // 存在才参与硬拦截；不存在则只保留 INDEX 拦截，避免在没有该文件的机器上误拦。
-  const todoFile = join(dirname(skillsDir), "tasks", "OPEN.md");
+  // 可选：待办镜像（默认不启用；配置 todoFile 才参与硬拦截）
+  const todoFile = typeof config.todoFile === "string" ? config.todoFile : "";
+  const maintReport = typeof config.maintReport === "string" ? config.maintReport : "";
+  const bellExtra = typeof config.bellExtra === "string" ? config.bellExtra : "";
+  // 可选：个人补充规则文件（每次注入时现读，改文件不用重启；文件不存在则回退 bellExtra）
+  const bellExtraFile = typeof config.bellExtraFile === "string" ? config.bellExtraFile : "";
+  function readBellExtra() {
+    if (bellExtraFile) {
+      try {
+        const t = readFileSync(bellExtraFile, "utf8").trim();
+        if (t) return t;
+      } catch {
+        /* 读不到就回退 */
+      }
+    }
+    return bellExtra;
+  }
+  const structGates = buildStructGates(config);
   const delivered = new Map(); // sessionId -> version（兜底）
   const compactionSeen = new Map(); // sessionId -> 已提示过的压缩次数（无 session 对象时兜底）
   const projectionCache = new Map(); // path -> { mtimeMs, size, stats }
@@ -119,7 +140,6 @@ export function apply(ctx, config = {}) {
     Array.isArray(config.blockedTools) && config.blockedTools.length > 0
       ? config.blockedTools
       : DEFAULT_BLOCKED_TOOLS;
-  // 拒绝理由里直接给出的校验器命令（profile 可配；不配则用通用提示）
   const todoCheckCmd = typeof config.todoCheckCmd === "string" ? config.todoCheckCmd : "";
 
   function log(line) {
@@ -168,7 +188,7 @@ export function apply(ctx, config = {}) {
         if (!gateHit) {
           if (sess) sess[GATE] = version;
           delivered.set(sid, version);
-          const text2 = reminderText(version, indexPath, existsSyncSafe(todoFile) ? todoFile : null);
+          const text2 = reminderText(version, indexPath, { extra: readBellExtra() });
           let injectText = text2;
           const integ = bellIntegrity(fileURLToPath(new URL("./rule.mjs", import.meta.url)), join(skillsDir, "bell_state.json"));
           if (!integ.ok) {
@@ -189,14 +209,14 @@ export function apply(ctx, config = {}) {
           ];
         }
 
-        // 维护报告有 Issues → 自动把摘要带进来（每条报告只带一次；没有 Issues 零注入）
+        // 维护报告有 Issues → 自动把摘要带进来（仅在配置 maintReport 时启用；每份报告只带一次）
         try {
-          const rp = process.env.OPS_MAINT_REPORT || "D:\\software\\ToolsDev\\tasks\\MAINT-LATEST.md";
-          if (existsSyncSafe(rp)) {
+          const rp = maintReport || process.env.OPS_MAINT_REPORT || "";
+          if (rp && existsSyncSafe(rp)) {
             const mt = statSync(rp).mtimeMs;
             const seen = sess ? sess[MAINT_SEEN] : globalMaintSeen;
             if (seen !== mt) {
-              const hint = maintHintText(readFileSync(rp, "utf8"));
+              const hint = maintHintText(readFileSync(rp, "utf8"), rp);
               if (sess) sess[MAINT_SEEN] = mt; else globalMaintSeen = mt;
               if (hint) {
                 log(`inject maint-issues session=${sid} chars=${hint.length}`);
@@ -262,7 +282,7 @@ export function apply(ctx, config = {}) {
       try {
         // 校验器白名单：待办/结构检查器是「解锁动作」，必须先放行，否则会死锁。
         // 严格：只认单条校验器命令（禁止 ; && || | 与文件重定向）。
-        if (isCheckerCommandSafe(exec.name, exec.arguments)) return next();
+        if (isCheckerCommandSafe(exec.name, exec.arguments, structGates)) return next();
         const writeAttempt = needsGuard(exec.name, exec.arguments, blockedTools);
         if (!writeAttempt) return next();
         const sess = exec?.agent?.session;
@@ -271,15 +291,14 @@ export function apply(ctx, config = {}) {
         // 待办门只认「真的跑过校验器」：读 OPEN.md 只是读规则，不再算数
         const todoDone = sess ? !!sess[TODO_CHECKED] : globalTodoChecked;
         const needTodo = existsSyncSafe(todoFile) && !todoDone;
-        if (idxRead && !needTodo) return next();
-        // 第三道门：写某个区域之前，本会话必须跑过该区域的结构检查器（通用，按路径匹配）
-        const gateIds = structGatesFor(exec.arguments);
+        // 结构门（可选）：先判，避免被「已读 INDEX」的早退跳过（曾经的 bug）
+        const gateIds = structGatesFor(exec.arguments, structGates);
         if (gateIds.length) {
           const checked = sess ? (sess[STRUCT_CHECKED] || {}) : globalStructChecked;
           const missing = gateIds.filter((id) => !checked[id]);
           if (missing.length) {
             const g = missing[0];
-            const gate = STRUCT_GATES.find((x) => x.id === g);
+            const gate = structGates.find((x) => x.id === g);
             log(`guard deny-struct gate=${g} session=${sess ? (sess.id ?? "default") : "none"} tool=${exec.name}`);
             return {
               kind: "deny",
@@ -290,6 +309,7 @@ export function apply(ctx, config = {}) {
             };
           }
         }
+        if (idxRead && !needTodo) return next();
         if (!sess) log(`guard no-session using-global idx=${idxRead} todo=${todoDone} tool=${exec.name}`);
         if (!enforce) {
           log(`guard skip reason=enforce-off tool=${exec.name}`);
@@ -326,7 +346,7 @@ export function apply(ctx, config = {}) {
       if (!sess) {
         if (isIndexRead(exec?.name, exec?.arguments, indexPath)) globalReadIndex = true;
         if (isTodoRead(exec?.name, exec?.arguments, todoFile)) globalReadTodo = true;
-        for (const id of structCheckIds(exec?.name, exec?.arguments)) {
+        for (const id of structCheckIds(exec?.name, exec?.arguments, structGates)) {
           globalStructChecked[id] = true;
           log(`guard struct-check id=${id} session=none`);
         }
@@ -349,7 +369,7 @@ export function apply(ctx, config = {}) {
         sess[TODO_CHECKED] = true;
         log(`guard todo-check session=${sid}`);
       }
-      for (const id of structCheckIds(exec?.name, exec?.arguments)) {
+      for (const id of structCheckIds(exec?.name, exec?.arguments, structGates)) {
         sess[STRUCT_CHECKED] = sess[STRUCT_CHECKED] || {};
         sess[STRUCT_CHECKED][id] = true;
         globalStructChecked[id] = true;
