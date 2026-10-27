@@ -61,6 +61,15 @@ node install.mjs /path/to/profile --uninstall     # 卸载
     #     pathRe: "docs[/\\\\]"               # 命中这些路径时……
     #     checkRe: "docs_check\\.py"          # 这条命令就是该门检查器
     #     checker: "python D:\\tools\\docs_check.py"
+    # 可选：现场状态行（宿主版本 / 维护报告 / 待办条数），默认关闭
+    # status: true
+    # statusTodoJson: "D:\\my-work\\todo.json"       # 读条目数用
+    # hostVersionFile: "D:\\tools\\host_version.txt" # 宿主版本缓存（由你自己的脚本写）
+    # asarCandidates: ["C:/apps/DSH/resources/app.asar"]
+    # 可选：版本引用核对（上一条回复写了非现场版本时警告），默认关闭
+    # versionWarning: true
+    # versionWarnFile: "D:\\my-work\\VERSION-WARN.md"
+    # installedProfileDirs: ["C:/Users/me/.dsh/profiles/desktop"]
   disabled: false
 ```
 
