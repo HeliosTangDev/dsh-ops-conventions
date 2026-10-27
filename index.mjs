@@ -181,24 +181,25 @@ export function apply(ctx, config = {}) {
 
   // 在回复产生时缓存最后一条 assistant 文本（pre-step 的 messages 里看不到 assistant，
   // 这里用 session/event 抓，供下一轮版本核对使用）。
-  let eventShapeLogged = false;
+  let eventShapeCount = 0;
   ctx.on("session/event", (session, event) => {
     try {
-      if (!eventShapeLogged) {
-        eventShapeLogged = true;
-        log(`session event keys: ${Object.keys(event || {}).join(",")}`);
-      }
-      const pick = (obj) => {
-        if (!obj) return "";
-        const c = obj.content ?? obj.text ?? obj.message?.content ?? obj.message?.text;
+      const d = event?.data ?? {};
+      const pickText = (o) => {
+        if (!o) return "";
+        const c = o.content ?? o.text ?? o.message?.content ?? o.message?.text;
         if (typeof c === "string") return c;
         if (Array.isArray(c)) return c.map((x) => (typeof x === "string" ? x : (x && x.text) || "")).join("");
         return "";
       };
-      const role = String(event?.role ?? event?.message?.role ?? "");
-      const type = String(event?.type ?? event?.kind ?? "");
-      const txt = pick(event);
-      if (txt && (/assistant|agent|model/i.test(role) || /assistant|agent|model/i.test(type))) {
+      const role = String(d.role ?? d.message?.role ?? event?.role ?? "");
+      const type = String(event?.type ?? "");
+      if (eventShapeCount < 5) {
+        eventShapeCount++;
+        log(`session event: type=${type} role=${role} dataKeys=${Object.keys(d).join(",")}`);
+      }
+      const txt = pickText(d) || pickText(event);
+      if (txt && (/assistant|agent|model/i.test(role) || /assistant|agent|model|response/i.test(type))) {
         if (session) session[LAST_ASST] = txt;
       }
     } catch (e) {
