@@ -26,6 +26,7 @@ import {
   readVersion,
   reminderText,
   liveStatusText,
+  staleClaimVersions,
   bellIntegrity,
   resolveLogFile,
   resolveSkillsDir,
@@ -292,6 +293,41 @@ export function apply(ctx, config = {}) {
               ];
             }
           }
+        }
+
+        // 版本引用核对：上一条回复若在"当前/已装"句里写了非现场版本，注入一行警告（机器检查，2026-10-27）
+        try {
+          const prev = (decision.messages || []).filter((m) => m && m.role === "assistant").pop();
+          if (prev) {
+            const txt = Array.isArray(prev.content)
+              ? prev.content.map((c) => (c && c.type === "text" ? c.text : "")).join("\n")
+              : typeof prev.content === "string"
+                ? prev.content
+                : "";
+            const installed = new Set();
+            try {
+              const pj = JSON.parse(readFileSync(join(homedir(), ".dsh", "profiles", "desktop", "package.json"), "utf8"));
+              for (const v of Object.values(pj.dependencies || {})) {
+                const m = String(v).match(/\d+\.\d+\.\d+(?:-[A-Za-z0-9.]+)?/);
+                if (m) installed.add(m[0]);
+              }
+            } catch {}
+            let host = "";
+            try { host = readFileSync("D:/software/ToolsUse/_tools/status/host_version.txt", "utf8").trim(); } catch {}
+            const stale = staleClaimVersions(txt, { bellVersion: version, host, installed });
+            if (stale.length) {
+              log(`stale version claim: ${stale.join(",")}`);
+              messages = [
+                ...messages,
+                createUserMessage({
+                  content: [{ type: "text", text: `[版本核对] 上一条回复在现状句里写了 ${stale.slice(0, 3).join("、")}，与现场不一致（host=${host || "?"}，bell=v${version}）；以 status.cmd 输出为准。` }],
+                  source: { kind: "plugin:dsh-ops-conventions", plugin: "dsh-ops-conventions", form: "instructions" },
+                }),
+              ];
+            }
+          }
+        } catch (err) {
+          log(`stale version check error: ${err?.message ?? String(err)}`);
         }
 
         if (messages === decision.messages) return decision;

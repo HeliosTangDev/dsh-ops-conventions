@@ -460,8 +460,7 @@ export function bellIntegrity(ruleFile, stateFile) {
 }
 
 /** 读 asar 内 JSON；失败抛错。 */
-function readAsarJson(asarPath, innerPath) {
-  const fd = openSync(asarPath, "r");
+function readAsarJson(asarPath, innerPath) {  const fd = openSync(asarPath, "r");
   try {
     const head = Buffer.alloc(16);
     readSync(fd, head, 0, 16, 0);
@@ -498,6 +497,11 @@ export function liveStatusText(opts = {}) {
     const pad = (n) => String(n).padStart(2, "0");
     const ts = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
     let host = "";
+    // plain-text cache written by status.cmd (in-host asar reads are unreliable)
+    try {
+      const hf = "D:/software/ToolsUse/_tools/status/host_version.txt";
+      if (existsSync(hf)) host = readFileSync(hf, "utf8").trim();
+    } catch {}
     const exeDir = dirname(process.execPath || "");
     const asarCandidates = [
       opts.asar,
@@ -543,4 +547,31 @@ export function liveStatusText(opts = {}) {
   } catch (e) {
     return "";
   }
+}
+
+/**
+ * 扫上一条助手回复里的「现状声明句」，找出与现场不一致的版本引用。
+ * 只报"当前/已装/最新"这类句子里的版本，避免把历史版本误判。
+ * @param {string} text 助手回复文本
+ * @param {{bellVersion?: string, host?: string, installed?: Set<string>}} live
+ * @returns {string[]} 不一致的版本 token
+ */
+export function staleClaimVersions(text, live = {}) {
+  const claim = /当前|现在|目前|已装|已升到|用的是|最新/;
+  const sem = /\b\d+\.\d+\.\d+(?:-[A-Za-z0-9.]+)?\b/g;
+  const vv = /\bv(\d{1,3})\b/g;
+  const installed = live.installed instanceof Set ? live.installed : new Set();
+  const out = [];
+  for (const line of String(text || "").split(/\r?\n/)) {
+    if (!claim.test(line)) continue;
+    for (const m of line.matchAll(sem)) {
+      const v = m[0];
+      if (!installed.has(v) && v !== live.host) out.push(v);
+    }
+    for (const m of line.matchAll(vv)) {
+      const n = m[1];
+      if (live.bellVersion && String(live.bellVersion) !== n && Number(n) >= 30) out.push("v" + n);
+    }
+  }
+  return [...new Set(out)];
 }
