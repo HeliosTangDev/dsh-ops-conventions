@@ -1,4 +1,4 @@
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync, existsSync, openSync, readSync, closeSync, statSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { join, dirname } from "node:path";
 import { homedir } from "node:os";
@@ -456,5 +456,74 @@ export function bellIntegrity(ruleFile, stateFile) {
     return { ok: st.sha256 === sha, expected: st.sha256, actual: sha };
   } catch (e) {
     return { ok: true, reason: "error: " + (e && e.message) };
+  }
+}
+
+/** 读 asar 内 JSON；失败抛错。 */
+function readAsarJson(asarPath, innerPath) {
+  const fd = openSync(asarPath, "r");
+  try {
+    const head = Buffer.alloc(16);
+    readSync(fd, head, 0, 16, 0);
+    const scanLen = Math.min(head.readUInt32LE(8) + 4096, 16 * 1024 * 1024);
+    const raw = Buffer.alloc(scanLen);
+    readSync(fd, raw, 0, scanLen, 0);
+    const txt = raw.toString("utf8");
+    const start = txt.indexOf("{");
+    let depth = 0, inStr = false, esc = false, end = -1;
+    for (let i = start; i < txt.length; i++) {
+      const c = txt[i];
+      if (inStr) { if (esc) esc = false; else if (c === "\\") esc = true; else if (c === '"') inStr = false; }
+      else if (c === '"') inStr = true;
+      else if (c === "{") depth++;
+      else if (c === "}") { depth--; if (depth === 0) { end = i; break; } }
+    }
+    const dataStart = Math.ceil((end + 1) / 4) * 4;
+    const header = JSON.parse(txt.slice(start, end + 1));
+    let node = header.files;
+    for (const seg of innerPath.split("/")) node = node && node.files ? node.files[seg] : node && node[seg];
+    const buf = Buffer.alloc(node.size);
+    readSync(fd, buf, 0, node.size, dataStart + Number(node.offset));
+    return JSON.parse(buf.toString("utf8"));
+  } finally { closeSync(fd); }
+}
+
+/**
+ * 现场状态一行：宿主版本、门铃 VERSION、维护报告时间/issue 数、待办条目数、marker。
+ * 只读文件，不跑子进程；任何异常返回 ""（fail-open）。
+ */
+export function liveStatusText(opts = {}) {
+  try {
+    const now = new Date();
+    const pad = (n) => String(n).padStart(2, "0");
+    const ts = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
+    let host = "?";
+    try { host = readAsarJson(opts.asar || "D:/software/DSH/resources/app.asar", "dsh/package.json").version; } catch {}
+    let bell = "?";
+    try { bell = readFileSync(opts.versionFile, "utf8").trim(); } catch {}
+    let maint = "none";
+    const rp = opts.maintReport || "";
+    if (rp && existsSync(rp)) {
+      const st = statSync(rp);
+      const txt = readFileSync(rp, "utf8");
+      const m = txt.match(/##\s*Issues\s*\n([\s\S]*?)(?:\n##|$)/);
+      let n = 0;
+      if (m) n = m[1].split(/\r?\n/).filter((l) => /^-/.test(l.trim()) && !/^-?\s*none/i.test(l.trim())).length;
+      maint = `${st.mtime.getFullYear()}-${pad(st.mtime.getMonth() + 1)}-${pad(st.mtime.getDate())} ${pad(st.mtime.getHours())}:${pad(st.mtime.getMinutes())} issues=${n}`;
+    }
+    let todos = "?";
+    const tf = opts.todoFile || "";
+    if (tf && existsSync(tf)) {
+      try {
+        const j = JSON.parse(readFileSync(tf, "utf8"));
+        const items = Array.isArray(j.items) ? j.items : [];
+        const ask = items.filter((x) => String(x.type) === "ask").length;
+        todos = `${items.length} (ask ${ask}; run todo_check for verdict)`;
+      } catch { todos = "parse-error"; }
+    }
+    const marker = rp ? (existsSync(rp.replace(/MAINT-LATEST\.md$/i, "MAINT-OPEN.md")) ? "present" : "absent") : "?";
+    return `[现场状态 ${ts}] host=${host} bell=v${bell}; maint=${maint}; todo items=${todos}; marker=${marker}. 报状态用这里的数字，旧记忆/旧快照作废。`;
+  } catch (e) {
+    return "";
   }
 }

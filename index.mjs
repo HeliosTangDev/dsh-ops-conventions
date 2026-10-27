@@ -25,6 +25,7 @@ import {
   maintHintText,
   readVersion,
   reminderText,
+  liveStatusText,
   bellIntegrity,
   resolveLogFile,
   resolveSkillsDir,
@@ -135,6 +136,7 @@ export function apply(ctx, config = {}) {
   let globalReadTodo = false;
   let globalStructChecked = {};
   let globalMaintSeen = 0;
+  let globalStatusSent = false;
   let globalTodoChecked = false; // 无会话时（子代理等）的「跑过待办校验器」标记
   const blockedTools =
     Array.isArray(config.blockedTools) && config.blockedTools.length > 0
@@ -168,6 +170,7 @@ export function apply(ctx, config = {}) {
   const LAST_TEXT = Symbol.for("dsh.opsConventions.lastUserText");
   const COMPACT_SEEN = Symbol.for("dsh.opsConventions.compactionSeen");
   const MAINT_SEEN = Symbol.for("dsh.opsConventions.maintSeen");
+  const STATUS_SENT = Symbol.for("dsh.opsConventions.statusSent");
 
   ctx.on(
     "agent/pre-step",
@@ -207,6 +210,31 @@ export function apply(ctx, config = {}) {
               },
             }),
           ];
+        }
+
+        // 现场状态：每会话注入一次，数字直接读文件，不依赖模型记忆（2026-10-27）
+        try {
+          if (!(sess ? sess[STATUS_SENT] : globalStatusSent)) {
+            if (sess) sess[STATUS_SENT] = true; else globalStatusSent = true;
+            const st = liveStatusText({
+              asar: process.env.DSH_ASAR || "D:/software/DSH/resources/app.asar",
+              versionFile,
+              maintReport: maintReport || process.env.OPS_MAINT_REPORT || "",
+              todoFile: process.env.OPS_TODO_FILE || "D:\\software\\ToolsUse\\_tools\\todo\\todo.json",
+            });
+            if (st) {
+              log(`inject status chars=${st.length}`);
+              messages = [
+                ...messages,
+                createUserMessage({
+                  content: [{ type: "text", text: st }],
+                  source: { kind: "plugin:dsh-ops-conventions", plugin: "dsh-ops-conventions", form: "instructions" },
+                }),
+              ];
+            }
+          }
+        } catch (err) {
+          log(`status inject error: ${err?.message ?? String(err)}`);
         }
 
         // 维护报告有 Issues → 自动把摘要带进来（仅在配置 maintReport 时启用；每份报告只带一次）
