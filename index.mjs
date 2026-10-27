@@ -178,6 +178,8 @@ export function apply(ctx, config = {}) {
   const STRUCT_CHECKED = Symbol.for("dsh.opsConventions.structChecked");
   const LAST_TEXT = Symbol.for("dsh.opsConventions.lastUserText");
   const LAST_ASST = Symbol.for("dsh.opsConventions.lastAssistantText");
+  const lastAsstBySid = new Map();
+  const staleWarnedBySid = new Map();
 
   // 在回复产生时缓存最后一条 assistant 文本（pre-step 的 messages 里看不到 assistant，
   // 这里用 session/event 抓，供下一轮版本核对使用）。
@@ -185,6 +187,7 @@ export function apply(ctx, config = {}) {
   ctx.on("session/event", (session, event) => {
     try {
       const d = event?.data ?? {};
+      const sid0 = session?.id ?? "default";
       const pickText = (o) => {
         if (!o) return "";
         const c = o.content ?? o.text ?? o.message?.content ?? o.message?.text;
@@ -199,14 +202,12 @@ export function apply(ctx, config = {}) {
         log(`session event: type=${type} role=${role} dataKeys=${Object.keys(d).join(",")}`);
       }
       const txt = pickText(d) || pickText(event);
-      if (type === "turn/start" && session) session[LAST_ASST] = "";
+      if (type === "turn/start") lastAsstBySid.delete(sid0);
       if (txt && (/assistant|agent|model/i.test(role) || /assistant|agent|model|response/i.test(type))) {
-        if (session) {
-          const cur = String(session[LAST_ASST] || "");
-          // 一轮里可能有多条 assistant 事件（分段/增量）：保留最长的一条，避免只拿到碎片
-          if (txt.length > cur.length) session[LAST_ASST] = txt;
-          log(`asst capture: type=${type} role=${role} len=${txt.length} kept=${String(session[LAST_ASST] || "").length}`);
-        }
+        const cur = String(lastAsstBySid.get(sid0) || "");
+        // 一轮里可能有多条 assistant 事件（分段/增量）：保留最长的一条，避免只拿到碎片
+        if (txt.length > cur.length) lastAsstBySid.set(sid0, txt);
+        log(`asst capture: type=${type} role=${role} len=${txt.length} kept=${String(lastAsstBySid.get(sid0) || "").length}`);
       }
     } catch (e) {
       log(`session event capture error: ${e?.message ?? String(e)}`);
@@ -364,7 +365,7 @@ export function apply(ctx, config = {}) {
           };
           const prev = pick(decMsgs) || pick(inMsgs);
           const asstCount = decMsgs.filter(isAssistant).length + inMsgs.filter(isAssistant).length;
-          const cachedText = sess ? String(sess[LAST_ASST] || "") : "";
+          const cachedText = String(lastAsstBySid.get(sid) || "");
           const txt = prev ? extractText(prev) : cachedText;
           log(`version scan: dec=${decMsgs.length} in=${inMsgs.length} asst=${asstCount} cached=${cachedText.length} textLen=${txt ? txt.length : -1}`);
           if (txt) {
@@ -381,14 +382,16 @@ export function apply(ctx, config = {}) {
             let host = "";
             try { if (hostVersionFile) host = readFileSync(hostVersionFile, "utf8").trim(); } catch {}
             const stale = staleClaimVersions(txt, { bellVersion: version, host, installed });
-            if (stale.length) {
+            const warnKey = stale.slice().sort().join(",");
+            if (stale.length && staleWarnedBySid.get(sid) !== warnKey) {
+              staleWarnedBySid.set(sid, warnKey);
               log(`stale version claim: ${stale.join(",")}`);
               // 也落成文件：模型上下文之外，用户和维护报告都能看到这条记录
               try {
                 if (versionWarnFile) {
                   appendFileSync(
                     versionWarnFile,
-                    `- ${new Date().toISOString()} session=${sid} stale=${stale.join(",")} (live: host=${host || "?"}, bell=v${version})\n`,
+                    `- ${new Date().toISOString()} session=${sid} stale=${stale.join(",")} (live: host=${host || "see status.cmd"}, bell=v${version})\n`,
                     "utf8",
                   );
                 }
@@ -396,7 +399,7 @@ export function apply(ctx, config = {}) {
               messages = [
                 ...messages,
                 createUserMessage({
-                  content: [{ type: "text", text: `[版本核对] 上一条回复在现状句里写了 ${stale.slice(0, 3).join("、")}，与现场不一致（host=${host || "?"}，bell=v${version}）；以 status.cmd 输出为准。` }],
+                  content: [{ type: "text", text: `[版本核对] 上一条回复在现状句里写了 ${stale.slice(0, 3).join("、")}，与现场不一致（host=${host || "see status.cmd"}，bell=v${version}）；以 status.cmd 输出为准。` }],
                   source: { kind: "plugin:dsh-ops-conventions", plugin: "dsh-ops-conventions", form: "instructions" },
                 }),
               ];
