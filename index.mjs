@@ -317,6 +317,14 @@ export function apply(ctx, config = {}) {
             const stale = staleClaimVersions(txt, { bellVersion: version, host, installed });
             if (stale.length) {
               log(`stale version claim: ${stale.join(",")}`);
+              // 也落成文件：模型上下文之外，用户和维护报告都能看到这条记录
+              try {
+                appendFileSync(
+                  "D:\\software\\ToolsDev\\tasks\\VERSION-WARN.md",
+                  `- ${new Date().toISOString()} session=${sid} stale=${stale.join(",")} (live: host=${host || "?"}, bell=v${version})\n`,
+                  "utf8",
+                );
+              } catch {}
               messages = [
                 ...messages,
                 createUserMessage({
