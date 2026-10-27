@@ -497,7 +497,7 @@ export function liveStatusText(opts = {}) {
     const now = new Date();
     const pad = (n) => String(n).padStart(2, "0");
     const ts = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
-    let host = "?";
+    let host = "";
     const exeDir = dirname(process.execPath || "");
     const asarCandidates = [
       opts.asar,
@@ -509,11 +509,13 @@ export function liveStatusText(opts = {}) {
       "D:/software/DSH-test/resources/app.asar",
     ].filter(Boolean);
     for (const ap of asarCandidates) {
-      if (host !== "?") break;
+      if (host) break;
       for (const inner of ["dsh/package.json", "package.json"]) {
         try { host = readAsarJson(ap, inner).version; break; } catch {}
       }
     }
+    // 宿主进程内读 asar 不可靠（2026-10-27 实测全失败）：退化为提示，不再显示 "?"。
+    if (!host) host = "see status.cmd";
     let bell = "?";
     try { bell = readFileSync(opts.versionFile, "utf8").trim(); } catch {}
     let maint = "none";
