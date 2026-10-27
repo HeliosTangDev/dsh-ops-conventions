@@ -176,6 +176,7 @@ export function apply(ctx, config = {}) {
   ctx.on(
     "agent/pre-step",
     async ({ agent, messages, signal }, next) => {
+      const inMessages = messages;
       const decision = await next();
       try {
         if (!decision || decision.kind !== "enter") return decision;
@@ -297,7 +298,6 @@ export function apply(ctx, config = {}) {
 
         // 版本引用核对：上一条回复若在"当前/已装"句里写了非现场版本，注入一行警告（机器检查，2026-10-27）
         try {
-          const allMsgs = decision.messages || [];
           const isAssistant = (m) => m && (m.role === "assistant" || m.role === "model" || m.type === "assistant");
           const extractText = (m) => {
             const c = m && (m.content ?? m.parts ?? m.text);
@@ -310,9 +310,15 @@ export function apply(ctx, config = {}) {
             if (c && typeof c === "object" && typeof c.text === "string") return c.text;
             return "";
           };
-          const asst = allMsgs.filter(isAssistant);
-          const prev = asst[asst.length - 1];
-          log(`version scan: msgs=${allMsgs.length} asst=${asst.length} textLen=${prev ? extractText(prev).length : -1}`);
+          const decMsgs = decision.messages || [];
+          const inMsgs = inMessages || [];
+          const pick = (arr) => {
+            const a = arr.filter(isAssistant);
+            return a.length ? a[a.length - 1] : null;
+          };
+          const prev = pick(decMsgs) || pick(inMsgs);
+          const asstCount = decMsgs.filter(isAssistant).length + inMsgs.filter(isAssistant).length;
+          log(`version scan: dec=${decMsgs.length} in=${inMsgs.length} asst=${asstCount} textLen=${prev ? extractText(prev).length : -1}`);
           if (prev) {
             const txt = extractText(prev);
             const installed = new Set();
