@@ -177,6 +177,34 @@ export function apply(ctx, config = {}) {
   const TODO_CHECKED = Symbol.for("dsh.opsConventions.todoChecked");
   const STRUCT_CHECKED = Symbol.for("dsh.opsConventions.structChecked");
   const LAST_TEXT = Symbol.for("dsh.opsConventions.lastUserText");
+  const LAST_ASST = Symbol.for("dsh.opsConventions.lastAssistantText");
+
+  // 在回复产生时缓存最后一条 assistant 文本（pre-step 的 messages 里看不到 assistant，
+  // 这里用 session/event 抓，供下一轮版本核对使用）。
+  let eventShapeLogged = false;
+  ctx.on("session/event", (session, event) => {
+    try {
+      if (!eventShapeLogged) {
+        eventShapeLogged = true;
+        log(`session event keys: ${Object.keys(event || {}).join(",")}`);
+      }
+      const pick = (obj) => {
+        if (!obj) return "";
+        const c = obj.content ?? obj.text ?? obj.message?.content ?? obj.message?.text;
+        if (typeof c === "string") return c;
+        if (Array.isArray(c)) return c.map((x) => (typeof x === "string" ? x : (x && x.text) || "")).join("");
+        return "";
+      };
+      const role = String(event?.role ?? event?.message?.role ?? "");
+      const type = String(event?.type ?? event?.kind ?? "");
+      const txt = pick(event);
+      if (txt && (/assistant|agent|model/i.test(role) || /assistant|agent|model/i.test(type))) {
+        if (session) session[LAST_ASST] = txt;
+      }
+    } catch (e) {
+      log(`session event capture error: ${e?.message ?? String(e)}`);
+    }
+  });
   const COMPACT_SEEN = Symbol.for("dsh.opsConventions.compactionSeen");
   const MAINT_SEEN = Symbol.for("dsh.opsConventions.maintSeen");
   const STATUS_SENT = Symbol.for("dsh.opsConventions.statusSent");
@@ -329,9 +357,10 @@ export function apply(ctx, config = {}) {
           };
           const prev = pick(decMsgs) || pick(inMsgs);
           const asstCount = decMsgs.filter(isAssistant).length + inMsgs.filter(isAssistant).length;
-          log(`version scan: dec=${decMsgs.length} in=${inMsgs.length} asst=${asstCount} textLen=${prev ? extractText(prev).length : -1}`);
-          if (prev) {
-            const txt = extractText(prev);
+          const cachedText = sess ? String(sess[LAST_ASST] || "") : "";
+          const txt = prev ? extractText(prev) : cachedText;
+          log(`version scan: dec=${decMsgs.length} in=${inMsgs.length} asst=${asstCount} cached=${cachedText.length} textLen=${txt ? txt.length : -1}`);
+          if (txt) {
             const installed = new Set();
             try {
               for (const prof of installedProfileDirs) {
