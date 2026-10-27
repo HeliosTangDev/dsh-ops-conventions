@@ -497,10 +497,10 @@ export function liveStatusText(opts = {}) {
     const pad = (n) => String(n).padStart(2, "0");
     const ts = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
     let host = "";
-    // plain-text cache written by status.cmd (in-host asar reads are unreliable)
+    // 可选：宿主版本缓存文件（由用户自己的 status 脚本写入；不配就不显示）
     try {
-      const hf = "D:/software/ToolsUse/_tools/status/host_version.txt";
-      if (existsSync(hf)) host = readFileSync(hf, "utf8").trim();
+      const hf = opts.hostVersionFile || "";
+      if (hf && existsSync(hf)) host = readFileSync(hf, "utf8").trim();
     } catch {}
     const exeDir = dirname(process.execPath || "");
     const asarCandidates = [
@@ -508,9 +508,7 @@ export function liveStatusText(opts = {}) {
       process.env.DSH_ASAR,
       join(exeDir, "resources", "app.asar"),
       join(exeDir, "..", "resources", "app.asar"),
-      "D:/software/DSH/resources/app.asar",
-      "D:/software/Harness/harness/resources/app.asar",
-      "D:/software/DSH-test/resources/app.asar",
+      ...(Array.isArray(opts.asarCandidates) ? opts.asarCandidates : []),
     ].filter(Boolean);
     for (const ap of asarCandidates) {
       if (host) break;

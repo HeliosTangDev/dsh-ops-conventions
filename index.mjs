@@ -84,6 +84,14 @@ export function apply(ctx, config = {}) {
     return bellExtra;
   }
   const structGates = buildStructGates(config);
+  // 可选：现场状态行 / 版本引用核对（默认关闭；需要的文件路径一律由配置传入）
+  const statusEnabled = config.status === true;
+  const statusTodoJson = typeof config.statusTodoJson === "string" ? config.statusTodoJson : "";
+  const hostVersionFile = typeof config.hostVersionFile === "string" ? config.hostVersionFile : "";
+  const asarCandidates = Array.isArray(config.asarCandidates) ? config.asarCandidates : [];
+  const versionWarning = config.versionWarning === true;
+  const versionWarnFile = typeof config.versionWarnFile === "string" ? config.versionWarnFile : "";
+  const installedProfileDirs = Array.isArray(config.installedProfileDirs) ? config.installedProfileDirs : [];
   const delivered = new Map(); // sessionId -> version（兜底）
   const compactionSeen = new Map(); // sessionId -> 已提示过的压缩次数（无 session 对象时兜底）
   const projectionCache = new Map(); // path -> { mtimeMs, size, stats }
@@ -214,15 +222,17 @@ export function apply(ctx, config = {}) {
           ];
         }
 
-        // 现场状态：每会话注入一次，数字直接读文件，不依赖模型记忆（2026-10-27）
+        // 现场状态：每会话注入一次，数字直接读文件（仅在配置 status: true 时启用）
         try {
-          if (!(sess ? sess[STATUS_SENT] : globalStatusSent)) {
+          if (statusEnabled && !(sess ? sess[STATUS_SENT] : globalStatusSent)) {
             if (sess) sess[STATUS_SENT] = true; else globalStatusSent = true;
             const st = liveStatusText({
               asar: process.env.DSH_ASAR,
               versionFile,
               maintReport: maintReport || process.env.OPS_MAINT_REPORT || "",
-              todoFile: process.env.OPS_TODO_FILE || "D:\\software\\ToolsUse\\_tools\\todo\\todo.json",
+              todoFile: statusTodoJson,
+              hostVersionFile,
+              asarCandidates,
             });
             if (st) {
               if (st.includes("host=?")) log("status host unresolved (asar read failed in all candidates)");
@@ -296,7 +306,8 @@ export function apply(ctx, config = {}) {
           }
         }
 
-        // 版本引用核对：上一条回复若在"当前/已装"句里写了非现场版本，注入一行警告（机器检查，2026-10-27）
+        // 版本引用核对：上一条回复若在"当前/已装"句里写了非现场版本，注入一行警告（仅在配置 versionWarning: true 时启用）
+        if (versionWarning) {
         try {
           const isAssistant = (m) => m && (m.role === "assistant" || m.role === "model" || m.type === "assistant");
           const extractText = (m) => {
@@ -323,24 +334,28 @@ export function apply(ctx, config = {}) {
             const txt = extractText(prev);
             const installed = new Set();
             try {
-              const pj = JSON.parse(readFileSync(join(homedir(), ".dsh", "profiles", "desktop", "package.json"), "utf8"));
-              for (const v of Object.values(pj.dependencies || {})) {
-                const m = String(v).match(/\d+\.\d+\.\d+(?:-[A-Za-z0-9.]+)?/);
-                if (m) installed.add(m[0]);
+              for (const prof of installedProfileDirs) {
+                const pj = JSON.parse(readFileSync(join(prof, "package.json"), "utf8"));
+                for (const v of Object.values(pj.dependencies || {})) {
+                  const m = String(v).match(/\d+\.\d+\.\d+(?:-[A-Za-z0-9.]+)?/);
+                  if (m) installed.add(m[0]);
+                }
               }
             } catch {}
             let host = "";
-            try { host = readFileSync("D:/software/ToolsUse/_tools/status/host_version.txt", "utf8").trim(); } catch {}
+            try { if (hostVersionFile) host = readFileSync(hostVersionFile, "utf8").trim(); } catch {}
             const stale = staleClaimVersions(txt, { bellVersion: version, host, installed });
             if (stale.length) {
               log(`stale version claim: ${stale.join(",")}`);
               // 也落成文件：模型上下文之外，用户和维护报告都能看到这条记录
               try {
-                appendFileSync(
-                  "D:\\software\\ToolsDev\\tasks\\VERSION-WARN.md",
-                  `- ${new Date().toISOString()} session=${sid} stale=${stale.join(",")} (live: host=${host || "?"}, bell=v${version})\n`,
-                  "utf8",
-                );
+                if (versionWarnFile) {
+                  appendFileSync(
+                    versionWarnFile,
+                    `- ${new Date().toISOString()} session=${sid} stale=${stale.join(",")} (live: host=${host || "?"}, bell=v${version})\n`,
+                    "utf8",
+                  );
+                }
               } catch {}
               messages = [
                 ...messages,
@@ -353,6 +368,7 @@ export function apply(ctx, config = {}) {
           }
         } catch (err) {
           log(`stale version check error: ${err?.message ?? String(err)}`);
+        }
         }
 
         if (messages === decision.messages) return decision;
