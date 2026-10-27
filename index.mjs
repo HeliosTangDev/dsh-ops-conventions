@@ -199,8 +199,14 @@ export function apply(ctx, config = {}) {
         log(`session event: type=${type} role=${role} dataKeys=${Object.keys(d).join(",")}`);
       }
       const txt = pickText(d) || pickText(event);
+      if (type === "turn/start" && session) session[LAST_ASST] = "";
       if (txt && (/assistant|agent|model/i.test(role) || /assistant|agent|model|response/i.test(type))) {
-        if (session) session[LAST_ASST] = txt;
+        if (session) {
+          const cur = String(session[LAST_ASST] || "");
+          // 一轮里可能有多条 assistant 事件（分段/增量）：保留最长的一条，避免只拿到碎片
+          if (txt.length > cur.length) session[LAST_ASST] = txt;
+          log(`asst capture: type=${type} role=${role} len=${txt.length} kept=${String(session[LAST_ASST] || "").length}`);
+        }
       }
     } catch (e) {
       log(`session event capture error: ${e?.message ?? String(e)}`);
