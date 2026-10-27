@@ -5,6 +5,7 @@
 //   node update-all.mjs            # install into every discovered profile
 //   node update-all.mjs check      # only print version per profile
 //   node update-all.mjs --pull     # git pull --ff-only first, then install
+//   node update-all.mjs --no-lock  # skip refreshing each profile's pnpm lock
 //
 // Default DSH homes:
 //   %USERPROFILE%\.dsh                -> desktop, web
@@ -23,11 +24,28 @@ const repo = dirname(fileURLToPath(import.meta.url));
 const args = process.argv.slice(2);
 const checkOnly = args.includes("check");
 const pull = args.includes("--pull");
+const noLock = args.includes("--no-lock");
 
 const DEFAULT_HOMES = [join(homedir(), ".dsh"), "D:\\software\\DSH-test\\home"];
 const homes = process.env.DSH_UPDATE_HOMES
   ? process.env.DSH_UPDATE_HOMES.split(";").map((s) => s.trim()).filter(Boolean)
   : DEFAULT_HOMES;
+
+function pnpmEntry() {
+  const candidates = [
+    process.env.DSH_PNPM,
+    join(process.env.DSH_APP || "D:\\software\\DSH", "resources", "runtime", "primary-runtime", "dependencies", "pnpm", "bin", "pnpm.mjs"),
+  ].filter(Boolean);
+  return candidates.find((p) => existsSync(p)) || null;
+}
+
+function refreshLock(profile, pnpm) {
+  const r = spawnSync(process.execPath, [pnpm, "install", "--lockfile-only", "--ignore-scripts"], {
+    cwd: profile,
+    stdio: "inherit",
+  });
+  return r.status === 0;
+}
 
 function listProfiles(home) {
   const dir = join(home, "profiles");
@@ -83,6 +101,20 @@ for (const profile of targets) {
   if (r.status !== 0) {
     failed++;
     console.error(`install into ${profile} failed (exit ${r.status})`);
+  }
+}
+
+if (!noLock) {
+  const pnpm = pnpmEntry();
+  if (!pnpm) {
+    console.warn("\n[warn] pnpm not found (set DSH_PNPM or DSH_APP); skipping lock refresh");
+  } else {
+    console.log("\n--- refresh pnpm locks (pin -> new file) ---");
+    for (const profile of targets) {
+      const ok = refreshLock(profile, pnpm);
+      console.log(`${ok ? "OK " : "FAIL"} lock refresh: ${profile}`);
+      if (!ok) failed++;
+    }
   }
 }
 
