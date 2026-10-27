@@ -498,7 +498,19 @@ export function liveStatusText(opts = {}) {
     const pad = (n) => String(n).padStart(2, "0");
     const ts = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
     let host = "?";
-    try { host = readAsarJson(opts.asar || "D:/software/DSH/resources/app.asar", "dsh/package.json").version; } catch {}
+    const asarCandidates = [
+      opts.asar,
+      process.env.DSH_ASAR,
+      "D:/software/DSH/resources/app.asar",
+      "D:/software/Harness/harness/resources/app.asar",
+      "D:/software/DSH-test/resources/app.asar",
+    ].filter(Boolean);
+    for (const ap of asarCandidates) {
+      if (host !== "?") break;
+      for (const inner of ["dsh/package.json", "package.json"]) {
+        try { host = readAsarJson(ap, inner).version; break; } catch {}
+      }
+    }
     let bell = "?";
     try { bell = readFileSync(opts.versionFile, "utf8").trim(); } catch {}
     let maint = "none";
