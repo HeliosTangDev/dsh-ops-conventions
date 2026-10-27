@@ -297,13 +297,24 @@ export function apply(ctx, config = {}) {
 
         // 版本引用核对：上一条回复若在"当前/已装"句里写了非现场版本，注入一行警告（机器检查，2026-10-27）
         try {
-          const prev = (decision.messages || []).filter((m) => m && m.role === "assistant").pop();
+          const allMsgs = decision.messages || [];
+          const isAssistant = (m) => m && (m.role === "assistant" || m.role === "model" || m.type === "assistant");
+          const extractText = (m) => {
+            const c = m && (m.content ?? m.parts ?? m.text);
+            if (typeof c === "string") return c;
+            if (Array.isArray(c)) {
+              return c
+                .map((x) => (typeof x === "string" ? x : x && typeof x.text === "string" ? x.text : ""))
+                .join("\n");
+            }
+            if (c && typeof c === "object" && typeof c.text === "string") return c.text;
+            return "";
+          };
+          const asst = allMsgs.filter(isAssistant);
+          const prev = asst[asst.length - 1];
+          log(`version scan: msgs=${allMsgs.length} asst=${asst.length} textLen=${prev ? extractText(prev).length : -1}`);
           if (prev) {
-            const txt = Array.isArray(prev.content)
-              ? prev.content.map((c) => (c && c.type === "text" ? c.text : "")).join("\n")
-              : typeof prev.content === "string"
-                ? prev.content
-                : "";
+            const txt = extractText(prev);
             const installed = new Set();
             try {
               const pj = JSON.parse(readFileSync(join(homedir(), ".dsh", "profiles", "desktop", "package.json"), "utf8"));
