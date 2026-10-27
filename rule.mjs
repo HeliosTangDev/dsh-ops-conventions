@@ -279,19 +279,30 @@ export function isTodoCheck(name, args) {
 
 /**
  * 校验器类命令的严格白名单：待办/结构检查器必须能跑，否则死锁。
- * 只放行「单条校验器命令」：出现串联（; && ||）、管道（|）或文件重定向（> 文件）一律不算。
+ * 只放行「单条校验器命令」：出现串联（; && ||）或文件重定向（> 文件）一律不算。
+ * 管道仅在右侧是「只显示」cmdlet（Select-Object / Format-* / Out-* 等）时放行，
+ * 因为 `检查器 | iex`、`| Remove-Item` 这类等于任意命令后门。
  * 允许 2>&1 / 2>nul / >nul / 2>$null 这类无副作用的重定向。
  */
+const PIPE_DISPLAY =
+  /^(select-object|select|format-table|format-list|format-wide|out-string|out-host|out-null|sort-object|measure-object|convertto-json|findstr|more)\b/i;
+
 export function isCheckerCommandSafe(name, args, gates = []) {
   if (!SHELL_TOOL.test(String(name ?? "").trim())) return false;
   const isChecker = isTodoCheck(name, args) || structCheckIds(name, args, gates).length > 0;
   if (!isChecker) return false;
   for (const raw of collectStrings(args)) {
     const s = String(raw);
-    // 先剥掉无副作用重定向（2>&1 / 2>nul / >nul / 2>$null），再判串联与重定向
+    // 先剥掉无副作用重定向（2>&1 / 2>nul / >nul / 2>$null）
     const stripped = s.replace(/[0-9*]?>\s*(&[12]|nul\b|\$null)/gi, "");
-    if (/[;&|]/.test(stripped)) return false;
-    if (/>/.test(stripped)) return false;
+    if (/[;&]/.test(stripped)) return false; // 串联一律拒绝
+    const segs = stripped.split("|");
+    if (/>/.test(segs[0])) return false; // 主命令不许写文件
+    for (let i = 1; i < segs.length; i++) {
+      const seg = segs[i].trim();
+      if (!PIPE_DISPLAY.test(seg)) return false; // 管道右侧只允许显示类命令
+      if (/[;&>]/.test(seg)) return false;
+    }
   }
   return true;
 }

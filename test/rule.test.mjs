@@ -108,9 +108,13 @@ test("shell 写识别：常见写动词与 cmd 绕过被拦，只读放行", () 
   assert.equal(isShellWrite("read", { file_path: "x" }), false);
 });
 
-test("校验器白名单：单条放行；串联/管道/文件重定向拒绝", () => {
+test("校验器白名单：单条放行；显示类管道放行；串联/危险管道/文件重定向拒绝", () => {
   const ps = "powershell -NoProfile -ExecutionPolicy Bypass -File D:\\x\\todo_check.ps1";
   assert.equal(isCheckerCommandSafe("pwsh", { command: ps }), true);
+  assert.equal(isCheckerCommandSafe("pwsh", { command: ps + " 2>&1 | Select-Object -Last 3" }), true);
+  assert.equal(isCheckerCommandSafe("pwsh", { command: ps + " | Out-String" }), true);
+  assert.equal(isCheckerCommandSafe("pwsh", { command: ps + " | iex" }), false);
+  assert.equal(isCheckerCommandSafe("pwsh", { command: ps + " | Remove-Item D:\\x -Force" }), false);
   assert.equal(isCheckerCommandSafe("pwsh", { command: ps + " 2>&1" }), true);
   assert.equal(isCheckerCommandSafe("pwsh", { command: ps + " ; Remove-Item D:\\x -Force" }), false);
   assert.equal(isCheckerCommandSafe("pwsh", { command: ps + " | iex" }), false);
