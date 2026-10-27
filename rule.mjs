@@ -498,9 +498,12 @@ export function liveStatusText(opts = {}) {
     const pad = (n) => String(n).padStart(2, "0");
     const ts = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
     let host = "?";
+    const exeDir = dirname(process.execPath || "");
     const asarCandidates = [
       opts.asar,
       process.env.DSH_ASAR,
+      join(exeDir, "resources", "app.asar"),
+      join(exeDir, "..", "resources", "app.asar"),
       "D:/software/DSH/resources/app.asar",
       "D:/software/Harness/harness/resources/app.asar",
       "D:/software/DSH-test/resources/app.asar",

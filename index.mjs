@@ -217,12 +217,13 @@ export function apply(ctx, config = {}) {
           if (!(sess ? sess[STATUS_SENT] : globalStatusSent)) {
             if (sess) sess[STATUS_SENT] = true; else globalStatusSent = true;
             const st = liveStatusText({
-              asar: process.env.DSH_ASAR || "D:/software/DSH/resources/app.asar",
+              asar: process.env.DSH_ASAR,
               versionFile,
               maintReport: maintReport || process.env.OPS_MAINT_REPORT || "",
               todoFile: process.env.OPS_TODO_FILE || "D:\\software\\ToolsUse\\_tools\\todo\\todo.json",
             });
             if (st) {
+              if (st.includes("host=?")) log("status host unresolved (asar read failed in all candidates)");
               log(`inject status chars=${st.length}`);
               messages = [
                 ...messages,
