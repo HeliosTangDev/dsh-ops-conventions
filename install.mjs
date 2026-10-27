@@ -25,7 +25,7 @@
  *   重启、双击没反应」，而且连崩 7 次都只报同一行。把「钉依赖」也收进 node 之后，
  *   装插件就是一条命令，不再需要任何人手写 PowerShell 去改这个文件。
  */
-import { copyFileSync, cpSync, existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { homedir } from "node:os";
@@ -57,10 +57,18 @@ for (let i = 0; i < argv.length; i++) {
   else if (!profileArg) profileArg = a;
   else fail(`多余参数: ${a}`);
 }
-if (!pinGiven) pin = LATEST_TGZ;
+if (!pinGiven) pin = "__LOCAL_TGZ__";
+else if (pin === "latest") pin = LATEST_TGZ;
 
 const profileDir = resolve(profileArg || process.env.DSH_PROFILE_DIR || join(homedir(), ".dsh", "profiles", "desktop"));
 const profilePkgPath = join(profileDir, "package.json");
+if (pin === "__LOCAL_TGZ__") {
+  pin = stageLocalTgz(profileDir);
+  if (!pin) {
+    console.warn(`⚠ 本机没有 ${pkgName}-${pkg.version}.tgz（先用 npm pack 生成或放进 _cache），退回 GitHub latest URL`);
+    pin = LATEST_TGZ;
+  }
+}
 const targetDir = join(profileDir, "node_modules", pkgName);
 const stamp = new Date().toISOString().replace(/[-:]/g, "").replace("T", "-").slice(0, 15);
 const backupPath = `${profilePkgPath}.bak-${stamp}`;
@@ -68,12 +76,31 @@ const backupPath = `${profilePkgPath}.bak-${stamp}`;
 function usage() {
   console.log(`用法: node install.mjs [profile 目录] [--pin <版本|URL|file:路径> | --no-pin] [--uninstall]
   profile 默认: $DSH_PROFILE_DIR 或 ~/.dsh/profiles/desktop
-  依赖默认钉: ${LATEST_TGZ}`);
+  依赖默认钉: file:./_local/<name>-<version>.tgz（本机不可变，避免 integrity 失配）
+  需要旧行为时显式 --pin latest 或 --pin <版本>`);
 }
 function fail(msg) {
   console.error(`✗ ${msg}`);
   process.exit(1);
 }
+/** 把「当前版本」的 tgz 放进 <profile>/_local，返回 file: 依赖值；找不到就返回 null。
+ *  本地文件不可变（同一个 file: 路径永远同一份字节），所以 pnpm 的 integrity 不会再失配。 */
+function stageLocalTgz(profileDirArg) {
+  const v = pkg.version || "0.0.0";
+  const candidates = [
+    join(pkgDir, `${pkgName}-${v}.tgz`),
+    join(process.env.TOOLS_DEV_ROOT || dirname(pkgDir), "_cache", `${pkgName}-${v}.tgz`),
+    join(pkgDir, `${pkgName}-${v}.tgz`),
+  ];
+  const found = candidates.find((p) => existsSync(p));
+  if (!found) return null;
+  const localDir = join(profileDirArg, "_local");
+  mkdirSync(localDir, { recursive: true });
+  const dest = join(localDir, `${pkgName}-${v}.tgz`);
+  copyFileSync(found, dest);
+  return `file:./_local/${pkgName}-${v}.tgz`;
+}
+
 /** 钉成什么依赖值：默认最新的固定名 tgz；--pin 版本号换版本名资产；其余原样 */
 function resolveDep(value) {
   if (value === null) return pkg.version || "0.0.0";

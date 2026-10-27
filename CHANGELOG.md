@@ -1,5 +1,10 @@
 ## 未发布
 
+### v0.6.1（待发）：install.mjs 默认钉本地不可变 tgz
+
+- **不再默认写成 GitHub latest 固定名 URL**：该地址背后的字节每次发版都会变，而 pnpm 锁记的是当时看到的 integrity —— 一发新版就 `ERR_PNPM_TARBALL_INTEGRITY`（或按旧锁装回旧版本，2026-10-27 实测踩到）。现在默认把本机 `_cache\<name>-<version>.tgz`（或仓库根同名文件）复制到 `<profile>\_local\`，依赖写成 `file:./_local/<name>-<version>.tgz`，字节永久不变。
+- 想保留旧行为用 `--pin latest`；`--pin <版本|URL|file:...>` 与 `--no-pin` 不变；本机没有对应 tgz 时退回 latest 并打警告。
+- 2026-10-27 三端（desktop/web/test）已按此重装，`pnpm install --frozen-lockfile` 三端均通过。
 ### v0.6.0（2026-10-26）：回归通用插件（不含个人约定）
 
 - **门铃正文通用化**：只保留「read INDEX.md + 每会话每版本一次 + 收尾按清单自检」，删掉所有作者个人规则（待办校验器、四件套、_tasks、命令式措辞、旧快照等）。
