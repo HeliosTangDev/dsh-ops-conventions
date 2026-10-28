@@ -191,6 +191,8 @@ export function apply(ctx, config = {}) {
   const LAST_ASST = Symbol.for("dsh.opsConventions.lastAssistantText");
   const lastAsstBySid = new Map();
   const prevReplyBySid = new Map();   // last COMPLETED turn reply (used by the version scan)
+  let prevReplyGlobal = "";           // fallback: last completed reply regardless of session id
+  let lastAccSid = "";                // session id that produced lastAsstBySid's newest content
   const staleWarnedBySid = new Map();
 
   // 在回复产生时缓存最后一条 assistant 文本（pre-step 的 messages 里看不到 assistant，
@@ -211,19 +213,31 @@ export function apply(ctx, config = {}) {
       const type = String(event?.type ?? "");
       if (eventShapeCount < 5) {
         eventShapeCount++;
-        log(`session event: type=${type} role=${role} dataKeys=${Object.keys(d).join(",")}`);
+        log(`session event: type=${type} role=${role} sid=${sid0} dataKeys=${Object.keys(d).join(",")}`);
       }
       const txt = pickText(d) || pickText(event);
       if (type === "turn/start") {
         const done = String(lastAsstBySid.get(sid0) || "");
-        if (done.trim()) prevReplyBySid.set(sid0, done);
+        if (done.trim()) {
+          prevReplyBySid.set(sid0, done);
+          prevReplyGlobal = done;
+        }
+        // also move the key that actually accumulated text, in case the ids differ
+        if (lastAccSid && lastAccSid !== sid0) {
+          const acc = String(lastAsstBySid.get(lastAccSid) || "");
+          if (acc.trim()) {
+            prevReplyBySid.set(lastAccSid, acc);
+            prevReplyGlobal = acc;
+          }
+          lastAsstBySid.delete(lastAccSid);
+        }
         lastAsstBySid.delete(sid0);
       }
       if (txt && (/assistant|agent|model/i.test(role) || /assistant|agent|model|response/i.test(type))) {
         const cur = String(lastAsstBySid.get(sid0) || "");
         // 一轮里可能有多条 assistant 事件（分段/增量）：保留最长的一条，避免只拿到碎片
-        if (txt.length > cur.length) lastAsstBySid.set(sid0, txt);
-        log(`asst capture: type=${type} role=${role} len=${txt.length} kept=${String(lastAsstBySid.get(sid0) || "").length}`);
+        if (txt.length > cur.length) { lastAsstBySid.set(sid0, txt); lastAccSid = sid0; }
+        log(`asst capture: type=${type} role=${role} sid=${sid0} len=${txt.length} kept=${String(lastAsstBySid.get(sid0) || "").length}`);
       }
     } catch (e) {
       log(`session event capture error: ${e?.message ?? String(e)}`);
@@ -382,9 +396,9 @@ export function apply(ctx, config = {}) {
           const prev = pick(decMsgs) || pick(inMsgs);
           const asstCount = decMsgs.filter(isAssistant).length + inMsgs.filter(isAssistant).length;
           const cachedText = String(lastAsstBySid.get(sid) || "");
-          const prevTurn = String(prevReplyBySid.get(sid) || "");
+          const prevTurn = String(prevReplyBySid.get(sid) || "") || prevReplyGlobal;
           const txt = (prev ? extractText(prev) : "") || prevTurn || cachedText;
-          log(`version scan: dec=${decMsgs.length} in=${inMsgs.length} asst=${asstCount} prevTurn=${prevTurn.length} cached=${cachedText.length} textLen=${txt ? txt.length : -1}`);
+          log(`version scan: dec=${decMsgs.length} in=${inMsgs.length} asst=${asstCount} sid=${sid} prevTurn=${prevTurn.length} cached=${cachedText.length} textLen=${txt ? txt.length : -1}`);
           if (txt) {
             const installed = new Set();
             try {

@@ -2,6 +2,8 @@
 
 ### v0.6.2：版本核对改用上一轮完整回复 + 警告文件轮转（2026-10-28）
 
+- **会话 id 不一致的接线修复（同日追加）**：观测到一次 `prevTurn=3414`（说明接线本身可行），但下一次 `turn/start` 又变 0——`session/event` 的 sid 与 `agent/pre-step` 的 sid 可能不同。现改为：`turn/start` 同时搬「事件 sid」与「实际累积的 sid」，并维护 `prevReplyGlobal` 兜底；scan 在 per-sid 为空时用全局值；capture/scan/turn 日志都带 `sid=`，下次能直接看出是否同 id。测试 25 pass，三端 index.mjs 哈希一致（`426864563948`）。
+
 - **修复比对源**：`lastAsstBySid` 在 `turn/start` 被清空，因此 scan 比的其实是当前轮的半截回复（日志长期 `asst=0`）。新增 `prevReplyBySid`：`turn/start` 时先把上一轮累积的最长回复挪过去再清空；scan 顺序改为「messages 里的回复 → prevReplyBySid → 当前累积」，日志增加 `prevTurn=`。
 - **VERSION-WARN.md 有界**：新增 `appendRotated()`（保留最近 300 行），不再无限增长。
 - 测试 `node --test --test-isolation=none`：25 pass / 0 fail；`sync.cmd` + `update-all.mjs` 已装三端（index.mjs 哈希一致）。
