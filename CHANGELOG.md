@@ -1,13 +1,21 @@
-## 未发布
+## 0.6.2（2026-10-29）
 
-### v0.6.2：版本核对改用上一轮完整回复 + 警告文件轮转（2026-10-28）
+### 个人路径配置化、校验器管道白名单
+
+- **去个人化收尾（2026-10-28）**：`status` 现场状态行与 `versionWarning` 版本核对改为配置驱动、默认关闭；路径全部由 `statusTodoJson` / `hostVersionFile` / `asarCandidates` / `versionWarnFile` / `installedProfileDirs` 传入，运行期文件里已无个人绝对路径；删除两处没人用的工具区专用函数。
+- **校验器命令允许显示类管道**：`检查器 | Select-Object -Last 3` 曾因“管道一律拒绝”导致跑检查器被结构门自锁；现允许管道右侧为显示类 cmdlet（Select-Object/Format-*/Out-*/Sort/Measure/ConvertTo-Json/findstr/more），`| iex`、`| Remove-Item` 仍拒绝。
+- **门铃绑定按渲染文本**：只改代码注释/重构不再强制升 VERSION；改真正注入文本才要求同批升版。
+
+### 版本核对：改用上一轮完整回复 + 警告文件轮转（2026-10-28）
+
 
 - **会话 id 不一致的接线修复（同日追加）**：观测到一次 `prevTurn=3414`（说明接线本身可行），但下一次 `turn/start` 又变 0——`session/event` 的 sid 与 `agent/pre-step` 的 sid 可能不同。现改为：`turn/start` 同时搬「事件 sid」与「实际累积的 sid」，并维护 `prevReplyGlobal` 兜底；scan 在 per-sid 为空时用全局值；capture/scan/turn 日志都带 `sid=`，下次能直接看出是否同 id。测试 25 pass，三端 index.mjs 哈希一致（`426864563948`）。
 
 - **修复比对源**：`lastAsstBySid` 在 `turn/start` 被清空，因此 scan 比的其实是当前轮的半截回复（日志长期 `asst=0`）。新增 `prevReplyBySid`：`turn/start` 时先把上一轮累积的最长回复挪过去再清空；scan 顺序改为「messages 里的回复 → prevReplyBySid → 当前累积」，日志增加 `prevTurn=`。
 - **VERSION-WARN.md 有界**：新增 `appendRotated()`（保留最近 300 行），不再无限增长。
 - 测试 `node --test --test-isolation=none`：25 pass / 0 fail；`sync.cmd` + `update-all.mjs` 已装三端（index.mjs 哈希一致）。
-### v0.6.1（待发）：install.mjs 默认钉本地不可变 tgz
+
+### install.mjs：默认钉本地不可变 tgz（原 0.6.1 草稿）
 
 - **不再默认写成 GitHub latest 固定名 URL**：该地址背后的字节每次发版都会变，而 pnpm 锁记的是当时看到的 integrity —— 一发新版就 `ERR_PNPM_TARBALL_INTEGRITY`（或按旧锁装回旧版本，2026-10-27 实测踩到）。现在默认把本机 `_cache\<name>-<version>.tgz`（或仓库根同名文件）复制到 `<profile>\_local\`，依赖写成 `file:./_local/<name>-<version>.tgz`，字节永久不变。
 - 想保留旧行为用 `--pin latest`；`--pin <版本|URL|file:...>` 与 `--no-pin` 不变；本机没有对应 tgz 时退回 latest 并打警告。
