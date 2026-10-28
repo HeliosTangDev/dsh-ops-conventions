@@ -1,5 +1,10 @@
 ## 未发布
 
+### v0.6.2：版本核对改用上一轮完整回复 + 警告文件轮转（2026-10-28）
+
+- **修复比对源**：`lastAsstBySid` 在 `turn/start` 被清空，因此 scan 比的其实是当前轮的半截回复（日志长期 `asst=0`）。新增 `prevReplyBySid`：`turn/start` 时先把上一轮累积的最长回复挪过去再清空；scan 顺序改为「messages 里的回复 → prevReplyBySid → 当前累积」，日志增加 `prevTurn=`。
+- **VERSION-WARN.md 有界**：新增 `appendRotated()`（保留最近 300 行），不再无限增长。
+- 测试 `node --test --test-isolation=none`：25 pass / 0 fail；`sync.cmd` + `update-all.mjs` 已装三端（index.mjs 哈希一致）。
 ### v0.6.1（待发）：install.mjs 默认钉本地不可变 tgz
 
 - **不再默认写成 GitHub latest 固定名 URL**：该地址背后的字节每次发版都会变，而 pnpm 锁记的是当时看到的 integrity —— 一发新版就 `ERR_PNPM_TARBALL_INTEGRITY`（或按旧锁装回旧版本，2026-10-27 实测踩到）。现在默认把本机 `_cache\<name>-<version>.tgz`（或仓库根同名文件）复制到 `<profile>\_local\`，依赖写成 `file:./_local/<name>-<version>.tgz`，字节永久不变。

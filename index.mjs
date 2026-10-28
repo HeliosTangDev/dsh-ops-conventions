@@ -1,4 +1,4 @@
-import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -153,6 +153,17 @@ export function apply(ctx, config = {}) {
       : DEFAULT_BLOCKED_TOOLS;
   const todoCheckCmd = typeof config.todoCheckCmd === "string" ? config.todoCheckCmd : "";
 
+  // Append one line to an evidence file, keeping at most 300 lines.
+  function appendRotated(file, line, keep = 300) {
+    try {
+      const prev = existsSync(file) ? readFileSync(file, "utf8").split("\n").filter(Boolean) : [];
+      const next = [...prev, line].slice(-keep);
+      writeFileSync(file, next.join("\n") + "\n", "utf8");
+    } catch (e) {
+      log(`rotate warn file failed: ${e?.message ?? String(e)}`);
+    }
+  }
+
   function log(line) {
     try {
       mkdirSync(dirname(logFile), { recursive: true });
@@ -179,6 +190,7 @@ export function apply(ctx, config = {}) {
   const LAST_TEXT = Symbol.for("dsh.opsConventions.lastUserText");
   const LAST_ASST = Symbol.for("dsh.opsConventions.lastAssistantText");
   const lastAsstBySid = new Map();
+  const prevReplyBySid = new Map();   // last COMPLETED turn reply (used by the version scan)
   const staleWarnedBySid = new Map();
 
   // 在回复产生时缓存最后一条 assistant 文本（pre-step 的 messages 里看不到 assistant，
@@ -202,7 +214,11 @@ export function apply(ctx, config = {}) {
         log(`session event: type=${type} role=${role} dataKeys=${Object.keys(d).join(",")}`);
       }
       const txt = pickText(d) || pickText(event);
-      if (type === "turn/start") lastAsstBySid.delete(sid0);
+      if (type === "turn/start") {
+        const done = String(lastAsstBySid.get(sid0) || "");
+        if (done.trim()) prevReplyBySid.set(sid0, done);
+        lastAsstBySid.delete(sid0);
+      }
       if (txt && (/assistant|agent|model/i.test(role) || /assistant|agent|model|response/i.test(type))) {
         const cur = String(lastAsstBySid.get(sid0) || "");
         // 一轮里可能有多条 assistant 事件（分段/增量）：保留最长的一条，避免只拿到碎片
@@ -366,8 +382,9 @@ export function apply(ctx, config = {}) {
           const prev = pick(decMsgs) || pick(inMsgs);
           const asstCount = decMsgs.filter(isAssistant).length + inMsgs.filter(isAssistant).length;
           const cachedText = String(lastAsstBySid.get(sid) || "");
-          const txt = prev ? extractText(prev) : cachedText;
-          log(`version scan: dec=${decMsgs.length} in=${inMsgs.length} asst=${asstCount} cached=${cachedText.length} textLen=${txt ? txt.length : -1}`);
+          const prevTurn = String(prevReplyBySid.get(sid) || "");
+          const txt = (prev ? extractText(prev) : "") || prevTurn || cachedText;
+          log(`version scan: dec=${decMsgs.length} in=${inMsgs.length} asst=${asstCount} prevTurn=${prevTurn.length} cached=${cachedText.length} textLen=${txt ? txt.length : -1}`);
           if (txt) {
             const installed = new Set();
             try {
@@ -389,10 +406,9 @@ export function apply(ctx, config = {}) {
               // 也落成文件：模型上下文之外，用户和维护报告都能看到这条记录
               try {
                 if (versionWarnFile) {
-                  appendFileSync(
+                  appendRotated(
                     versionWarnFile,
-                    `- ${new Date().toISOString()} session=${sid} stale=${stale.join(",")} (live: host=${host || "see status.cmd"}, bell=v${version})\n`,
-                    "utf8",
+                    `- ${new Date().toISOString()} session=${sid} stale=${stale.join(",")} (live: host=${host || "see status.cmd"}, bell=v${version})`,
                   );
                 }
               } catch {}
