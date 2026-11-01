@@ -74,6 +74,12 @@ node install.mjs /path/to/profile --uninstall     # 卸载
     # versionWarning: true
     # versionWarnFile: "D:\\my-work\\VERSION-WARN.md"
     # installedProfileDirs: ["C:/Users/me/.dsh/profiles/desktop"]
+    # 可选：回复合规扫描（在下一轮检查上一条回复，命中注入警告并落文件），默认关闭
+    # replyWarnFile: "D:\\my-work\\VERSION-WARN.md"
+    # replyChecks:
+    #   - id: no-next-time
+    #     pattern: "下次注意"
+    #     message: "不许用「下次注意」结案"
   disabled: false
 ```
 

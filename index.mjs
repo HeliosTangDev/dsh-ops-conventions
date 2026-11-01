@@ -28,6 +28,7 @@ import {
   liveStatusText,
   statusSummary,
   staleClaimVersions,
+  checkReply,
   bellIntegrity,
   resolveLogFile,
   resolveSkillsDir,
@@ -97,6 +98,11 @@ export function apply(ctx, config = {}) {
   const statusTool = config.statusTool === true;
   const todoLastFile = typeof config.todoLastFile === "string" ? config.todoLastFile : "";
   const memoryDir = typeof config.memoryDir === "string" ? config.memoryDir : "";
+  // 可选：回复合规扫描（规则由个人配置提供；命中在下一轮注入警告 + 落文件）
+  const replyChecks = Array.isArray(config.replyChecks) ? config.replyChecks : [];
+  const replyWarnFile =
+    typeof config.replyWarnFile === "string" && config.replyWarnFile ? config.replyWarnFile : versionWarnFile;
+  const replyWarnedBySid = new Map();
   const delivered = new Map(); // sessionId -> version（兜底）
   const compactionSeen = new Map(); // sessionId -> 已提示过的压缩次数（无 session 对象时兜底）
   const projectionCache = new Map(); // path -> { mtimeMs, size, stats }
@@ -377,8 +383,10 @@ export function apply(ctx, config = {}) {
           }
         }
 
-        // 版本引用核对：上一条回复若在"当前/已装"句里写了非现场版本，注入一行警告（仅在配置 versionWarning: true 时启用）
-        if (versionWarning) {
+        // 版本引用核对 + 回复合规扫描：都在下一轮 pre-step 里检查上一条回复
+        //   - versionWarning: 现状句写了非现场版本 → 警告
+        //   - replyChecks:   个人配置的回复规则（两段式/禁词等）→ 警告
+        if (versionWarning || replyChecks.length > 0) {
         try {
           const isAssistant = (m) => m && (m.role === "assistant" || m.role === "model" || m.type === "assistant");
           const extractText = (m) => {
@@ -438,6 +446,34 @@ export function apply(ctx, config = {}) {
                   source: { kind: "plugin:dsh-ops-conventions", plugin: "dsh-ops-conventions", form: "instructions" },
                 }),
               ];
+            }
+            if (replyChecks.length) {
+              const hits = checkReply(txt, replyChecks);
+              const key = hits.map((h) => h.id).sort().join(",");
+              if (hits.length && replyWarnedBySid.get(sid) !== key) {
+                replyWarnedBySid.set(sid, key);
+                log(`reply-check: ${hits.map((h) => h.id).join(",")}`);
+                try {
+                  if (replyWarnFile) {
+                    appendRotated(
+                      replyWarnFile,
+                      `- ${new Date().toISOString()} session=${sid} reply=${hits.map((h) => h.id).join(",")}`,
+                    );
+                  }
+                } catch {}
+                messages = [
+                  ...messages,
+                  createUserMessage({
+                    content: [
+                      {
+                        type: "text",
+                        text: `[回复核对] 上一条回复命中：${hits.map((h) => `${h.id}（${h.message}）`).join("；")}；按清单修正。`,
+                      },
+                    ],
+                    source: { kind: "plugin:dsh-ops-conventions", plugin: "dsh-ops-conventions", form: "instructions" },
+                  }),
+                ];
+              }
             }
           }
         } catch (err) {

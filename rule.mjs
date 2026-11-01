@@ -666,3 +666,24 @@ export function statusSummary(opts = {}) {
   }
   return out;
 }
+
+/**
+ * 回复合规扫描（通用，2026-11-01）：rules=[{id, pattern, message}]。
+ * 只在上一条助手回复上做正则匹配，命中返回 [{id, message, match}]。
+ * 非法正则/缺字段的规则被跳过，不抛异常。
+ */
+export function checkReply(text, rules = []) {
+  const out = [];
+  const t = String(text ?? "");
+  if (!t) return out;
+  for (const r of rules) {
+    if (!r || !r.id || !r.pattern) continue;
+    try {
+      const m = new RegExp(String(r.pattern)).exec(t);
+      if (m) out.push({ id: String(r.id), message: String(r.message || r.id), match: String(m[0]).slice(0, 60) });
+    } catch {
+      /* 非法正则跳过 */
+    }
+  }
+  return out;
+}

@@ -28,6 +28,7 @@ import {
   structCheckIds,
   structGatesFor,
   statusSummary,
+  checkReply,
 } from "../rule.mjs";
 
 test("reminderText：通用版只给版本 + 清单路径，不夹带个人约定", () => {
@@ -246,4 +247,21 @@ test("statusSummary：按配置汇总，未配置段不出现，任何缺失不�
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("checkReply：命中返回 id/message；无命中与非法正则不抛错", () => {
+  const rules = [
+    { id: "no-next-time", pattern: "下次注意", message: "不许用下次注意结案" },
+    { id: "bad-regex", pattern: "(", message: "invalid" },
+    { id: "no-todo", pattern: "^(?![\\s\\S]*##\\s*待办)[\\s\\S]*##\\s*自检", message: "有自检段但无待办段" },
+  ];
+  assert.equal(checkReply("", rules).length, 0);
+  assert.equal(checkReply("正常回复，没有禁词", rules).length, 0);
+  const hit = checkReply("这次先这样，下次注意", rules);
+  assert.deepEqual(hit.map((h) => h.id), ["no-next-time"]);
+  assert.ok(hit[0].message.includes("下次注意"));
+  const sections = checkReply("## 自检\n- 无", rules);
+  assert.ok(sections.some((h) => h.id === "no-todo"));
+  const both = checkReply("## 待办\n- 无\n\n## 自检\n- 无", rules);
+  assert.equal(both.length, 0);
 });
