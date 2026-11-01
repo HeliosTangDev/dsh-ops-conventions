@@ -323,6 +323,8 @@ export function buildStructGates(config = {}) {
         pathRe: g.pathRe ? new RegExp(String(g.pathRe), "i") : /$^/,
         checkRe: g.checkRe ? new RegExp(String(g.checkRe), "i") : /$^/,
         checker: String(g.checker),
+        // 可选：只对这些工具生效（如环境门只管 shell，避免编辑文档提到命令名就误拦）
+        tools: Array.isArray(g.tools) ? g.tools.map((t) => String(t).toLowerCase()) : [],
       });
     } catch {
       /* 非法正则跳过 */
@@ -331,12 +333,16 @@ export function buildStructGates(config = {}) {
   return out;
 }
 
-/** 这次调用命中了哪些结构门（按参数里的路径匹配） */
-export function structGatesFor(args, gates = []) {
+/** 这次调用命中了哪些结构门（按参数里的路径匹配；gate 可限定 tools） */
+export function structGatesFor(args, gates = [], toolName = "") {
   const ids = [];
+  const tn = String(toolName ?? "").trim().toLowerCase();
   for (const raw of collectStrings(args)) {
     const s = String(raw).replace(/\\/g, "/");
-    for (const g of gates) if (g.pathRe.test(s) && !ids.includes(g.id)) ids.push(g.id);
+    for (const g of gates) {
+      if (g.tools && g.tools.length > 0 && tn && !g.tools.includes(tn)) continue;
+      if (g.pathRe.test(s) && !ids.includes(g.id)) ids.push(g.id);
+    }
   }
   return ids;
 }

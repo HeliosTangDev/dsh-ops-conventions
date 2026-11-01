@@ -1,3 +1,11 @@
+## 0.8.1（2026-11-01）
+
+### 结构门支持按工具类型限定（tools）
+
+- `structGates` 每项新增可选 `tools: ["pwsh","cmd",...]`：只有这些工具的调用才判定该门。
+- 动机：环境门（`reg add`/`Set-Service` 等关键词）对 `edit`/`write` 也生效，导致**编辑提到这些命令的文档也被拦**；限定为 shell 后，文档编辑不再误拦，真实命令仍拦截。
+- `structGatesFor(args, gates, toolName)` 新增第三个参数（不传则维持旧行为，向后兼容）；测试覆盖三种情形（shell 命中、edit 不命中、无 toolName 时命中）。
+
 ## 0.8.0（2026-11-01）
 
 ### 新增回复合规扫描 replyChecks（输出型约定的事后硬化）

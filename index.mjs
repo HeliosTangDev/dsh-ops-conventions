@@ -508,7 +508,7 @@ export function apply(ctx, config = {}) {
         const todoDone = sess ? !!sess[TODO_CHECKED] : globalTodoChecked;
         const needTodo = existsSyncSafe(todoFile) && !todoDone;
         // 结构门（可选）：先判，避免被「已读 INDEX」的早退跳过（曾经的 bug）
-        const gateIds = structGatesFor(exec.arguments, structGates);
+        const gateIds = structGatesFor(exec.arguments, structGates, exec.name);
         if (gateIds.length) {
           const checked = sess ? (sess[STRUCT_CHECKED] || {}) : globalStructChecked;
           const missing = gateIds.filter((id) => !checked[id]);

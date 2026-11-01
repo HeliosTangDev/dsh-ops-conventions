@@ -136,6 +136,16 @@ test("结构门：默认空；配置后按路径命中，跑过检查器即记 i
   assert.deepEqual(structGatesFor({ file_path: "D:/repo/docs/a.md" }, gates), ["docs"]);
   assert.deepEqual(structCheckIds("pwsh", { command: "python docs_check.py" }, gates), ["docs"]);
   assert.equal(isCheckerCommandSafe("pwsh", { command: "python docs_check.py" }, gates), true);
+
+  // 可选 tools 限定：只对 shell 生效的 gate 不应命中 edit/write
+  const shellOnly = buildStructGates({
+    structGates: [
+      { id: "env", pathRe: "reg\\s+add", checkRe: "env-before\\.ps1", checker: "powershell -File env-before.ps1", tools: ["pwsh", "cmd"] },
+    ],
+  });
+  assert.deepEqual(structGatesFor({ command: "reg add HKCU\\X" }, shellOnly, "pwsh"), ["env"]);
+  assert.deepEqual(structGatesFor({ old_string: "reg add HKCU\\X" }, shellOnly, "edit"), []);
+  assert.deepEqual(structGatesFor({ old_string: "reg add HKCU\\X" }, shellOnly), ["env"]);
 });
 
 test("denyReason：通用版只提 INDEX；配置待办后才给校验器命令", () => {
