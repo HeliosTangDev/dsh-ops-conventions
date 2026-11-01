@@ -15,7 +15,7 @@
 // install.mjs copies THIS local repo into <profile>/node_modules, so the repo
 // is the source of truth; --pull is only needed on a second machine.
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, unlinkSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -114,6 +114,34 @@ if (!noLock) {
       const ok = refreshLock(profile, pnpm);
       console.log(`${ok ? "OK " : "FAIL"} lock refresh: ${profile}`);
       if (!ok) failed++;
+    }
+  }
+}
+
+// 清掉旧版本 tgz：_cache 与各 profile 的 _local 只保留当前版本，
+// 否则每次发版都会留 1+3 个旧包（tools_check LEFTOVERS 会一直 WARN）。
+const pkgName = "dsh-ops-conventions";
+let currentVer = "";
+try {
+  currentVer = JSON.parse(readFileSync(join(repo, "package.json"), "utf8")).version || "";
+} catch {
+  /* 读不到就跳过清理 */
+}
+if (currentVer) {
+  const keep = `${pkgName}-${currentVer}.tgz`;
+  const dirs = [join(process.env.TOOLS_DEV_ROOT || dirname(repo), "_cache")];
+  for (const p of targets) dirs.push(join(p, "_local"));
+  for (const dir of dirs) {
+    if (!existsSync(dir)) continue;
+    for (const f of readdirSync(dir)) {
+      if (f.startsWith(pkgName + "-") && f.endsWith(".tgz") && f !== keep) {
+        try {
+          unlinkSync(join(dir, f));
+          console.log(`pruned stale tgz: ${join(dir, f)}`);
+        } catch {
+          /* 占用/权限：留给下次 */
+        }
+      }
     }
   }
 }
