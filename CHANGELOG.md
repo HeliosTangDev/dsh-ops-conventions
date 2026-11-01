@@ -1,3 +1,10 @@
+## 0.8.2（2026-11-01）
+
+### ops_status 注册修复
+
+- 注册失败根因：`defineTool` 要求 `output: { schema, render }`；之前只给 `parameters` + `execute`，宿主在注册时读 `output.render` 抛 `Cannot read properties of undefined (reading 'render')`（日志证据：`status tool skipped: Cannot read properties of undefined (reading 'render')`）。
+- 修复：补 `output.schema` 与 `output.render`（JSON 文本渲染）。
+
 ## 0.8.1（2026-11-01）
 
 ### 结构门支持按工具类型限定（tools）

@@ -614,6 +614,11 @@ export function apply(ctx, config = {}) {
             parameters: {
               detail: { type: "string", description: 'brief (default) or "full"' },
             },
+            // defineTool 需要 output.schema + output.render（否则注册时读 render 报错）
+            output: {
+              schema: { type: "object", additionalProperties: true },
+              render: (_args, value) => [{ type: "text", text: JSON.stringify(value, null, 2) }],
+            },
             async execute(args) {
               return statusSummary({
                 versionFile,
