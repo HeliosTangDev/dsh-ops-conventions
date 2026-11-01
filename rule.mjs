@@ -1,4 +1,4 @@
-import { readFileSync, existsSync, openSync, readSync, closeSync, statSync } from "node:fs";
+import { readFileSync, existsSync, openSync, readSync, closeSync, statSync, readdirSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { join, dirname } from "node:path";
 import { homedir } from "node:os";
@@ -553,4 +553,116 @@ export function staleClaimVersions(text, live = {}) {
     }
   }
   return [...new Set(out)];
+}
+
+// ---- 只读状态汇总（2026-11-01）：供 ops_status 工具调用；路径全部来自配置，未配置的项不出现 ----
+
+/** 数维护报告的 Issues 条数（与 liveStatusText 同口径） */
+function countIssues(text) {
+  const m = text.match(/##\s*Issues\s*\n([\s\S]*?)(?:\n##|$)/);
+  if (!m) return 0;
+  return m[1].split(/\r?\n/).filter((l) => /^-/.test(l.trim()) && !/^-?\s*none/i.test(l.trim())).length;
+}
+
+/** 递归数某目录下 .md 文件数与最新修改时间（目录不存在返回 null） */
+function memoryTreeStats(dir) {
+  try {
+    if (!existsSync(dir)) return null;
+    const all = readdirSync(dir, { recursive: true });
+    let count = 0;
+    let latest = 0;
+    for (const rel of all) {
+      const p = join(dir, String(rel));
+      try {
+        const st = statSync(p);
+        if (!st.isFile() || !/\.md$/i.test(String(rel))) continue;
+        count++;
+        if (st.mtimeMs > latest) latest = st.mtimeMs;
+      } catch {
+        /* 单文件失败跳过 */
+      }
+    }
+    return { count, latest: latest ? new Date(latest).toISOString() : null };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 只读状态汇总：门铃版本、插件包版本、待办、维护报告、记忆库、最近日志。
+ * 任何一段失败只让该段为 null，不抛异常。
+ */
+export function statusSummary(opts = {}) {
+  const out = { generatedAt: new Date().toISOString() };
+
+  if (opts.versionFile) {
+    try {
+      out.bell = { version: readFileSync(opts.versionFile, "utf8").trim() };
+    } catch {
+      out.bell = null;
+    }
+  }
+  if (opts.packageFile) {
+    try {
+      const p = JSON.parse(readFileSync(opts.packageFile, "utf8"));
+      out.plugin = { name: p.name, version: p.version };
+    } catch {
+      out.plugin = null;
+    }
+  }
+  if (opts.todoFile) {
+    try {
+      const j = JSON.parse(readFileSync(opts.todoFile, "utf8"));
+      const items = Array.isArray(j.items) ? j.items : [];
+      out.todo = {
+        items: items.length,
+        ask: items.filter((x) => String(x?.type) === "ask").length,
+        open: items.filter((x) => String(x?.type) === "open").length,
+      };
+      if (opts.todoLastFile && existsSync(opts.todoLastFile)) {
+        const st = statSync(opts.todoLastFile);
+        out.todo.lastRun = new Date(st.mtimeMs).toISOString();
+        const txt = readFileSync(opts.todoLastFile, "utf8");
+        const m = txt.match(/summary:[^\r\n]*/i);
+        if (m) out.todo.lastSummary = m[0].trim();
+      }
+    } catch {
+      out.todo = null;
+    }
+  }
+  if (opts.maintReport) {
+    try {
+      if (existsSync(opts.maintReport)) {
+        const st = statSync(opts.maintReport);
+        out.maint = {
+          issues: countIssues(readFileSync(opts.maintReport, "utf8")),
+          updatedAt: new Date(st.mtimeMs).toISOString(),
+        };
+      }
+    } catch {
+      out.maint = null;
+    }
+  }
+  if (opts.memoryDir) out.memory = memoryTreeStats(opts.memoryDir);
+  if (opts.logFile) {
+    try {
+      const txt = readFileSync(opts.logFile, "utf8");
+      const lines = txt.split(/\r?\n/).filter(Boolean);
+      const tail = lines.slice(-200);
+      let lastInject = null;
+      for (const l of tail) {
+        const m = l.match(/inject v(\S+).*chars=(\d+)/);
+        if (m) lastInject = { at: l.slice(0, 24), version: m[1], chars: Number(m[2]) };
+      }
+      out.log = {
+        lines: lines.length,
+        lastInject,
+        denyCount: tail.filter((l) => /guard deny/.test(l)).length,
+        errorCount: tail.filter((l) => /\berror\b/i.test(l)).length,
+      };
+    } catch {
+      out.log = null;
+    }
+  }
+  return out;
 }

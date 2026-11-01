@@ -1,3 +1,12 @@
+## 0.7.0（2026-11-01）
+
+### 新增只读状态工具 ops_status
+
+- `config.statusTool: true` 时注册 agent 工具 `ops_status`：一次返回门铃 VERSION、插件包版本、待办条数（items/ask/open）、维护报告 Issues 数、记忆库 `.md` 数量与最近更新时间、最近注入/拦截日志摘要。
+- 全部只读、路径来自配置（`statusTodoJson` / `todoLastFile` / `maintReport` / `memoryDir` / `logFile`）；未配置的段直接省略。
+- 工具用动态 `import("@deepseek-ai/dsh-tools")` 注册：宿主没提供该模块时只记日志，不影响门铃与守卫。
+- 默认关闭；README 补配置说明，`statusSummary()` 有单测（含空配置不抛错）。
+
 ## 0.6.2（2026-10-29）
 
 ### 个人路径配置化、校验器管道白名单

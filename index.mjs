@@ -26,6 +26,7 @@ import {
   readVersion,
   reminderText,
   liveStatusText,
+  statusSummary,
   staleClaimVersions,
   bellIntegrity,
   resolveLogFile,
@@ -92,6 +93,10 @@ export function apply(ctx, config = {}) {
   const versionWarning = config.versionWarning === true;
   const versionWarnFile = typeof config.versionWarnFile === "string" ? config.versionWarnFile : "";
   const installedProfileDirs = Array.isArray(config.installedProfileDirs) ? config.installedProfileDirs : [];
+  // 可选：只读状态工具 ops_status（默认关闭）
+  const statusTool = config.statusTool === true;
+  const todoLastFile = typeof config.todoLastFile === "string" ? config.todoLastFile : "";
+  const memoryDir = typeof config.memoryDir === "string" ? config.memoryDir : "";
   const delivered = new Map(); // sessionId -> version（兜底）
   const compactionSeen = new Map(); // sessionId -> 已提示过的压缩次数（无 session 对象时兜底）
   const projectionCache = new Map(); // path -> { mtimeMs, size, stats }
@@ -554,4 +559,40 @@ export function apply(ctx, config = {}) {
       log(`guard observe error: ${err?.message ?? String(err)}`);
     }
   });
+
+  // ---- 只读状态工具 ops_status（2026-11-01；需 config.statusTool: true） ----
+  // 动态 import：宿主没提供 @deepseek-ai/dsh-tools 时只记日志，不影响门铃/守卫。
+  if (statusTool) {
+    const pluginPkg = fileURLToPath(new URL("./package.json", import.meta.url));
+    import("@deepseek-ai/dsh-tools")
+      .then(({ defineTool }) => {
+        if (!ctx.tools || typeof ctx.tools.register !== "function") {
+          log("status tool skipped: ctx.tools unavailable");
+          return;
+        }
+        ctx.tools.register(
+          defineTool({
+            name: "ops_status",
+            description:
+              "Read-only status of the ops-conventions setup: bell VERSION, plugin package version, todo counts, maintenance-report issues, memory-library file count, and recent inject/guard log. Sections whose paths are not configured are omitted.",
+            parameters: {
+              detail: { type: "string", description: 'brief (default) or "full"' },
+            },
+            async execute(args) {
+              return statusSummary({
+                versionFile,
+                packageFile: pluginPkg,
+                todoFile: statusTodoJson,
+                todoLastFile,
+                maintReport,
+                memoryDir,
+                logFile,
+              });
+            },
+          }),
+        );
+        log("status tool registered: ops_status");
+      })
+      .catch((err) => log(`status tool skipped: ${err?.message ?? String(err)}`));
+  }
 }

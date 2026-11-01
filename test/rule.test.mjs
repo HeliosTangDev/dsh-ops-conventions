@@ -27,6 +27,7 @@ import {
   skillsDirCandidates,
   structCheckIds,
   structGatesFor,
+  statusSummary,
 } from "../rule.mjs";
 
 test("reminderText：通用版只给版本 + 清单路径，不夹带个人约定", () => {
@@ -199,4 +200,50 @@ test("normalizeSessionId：去掉 session- / session_ 前缀", () => {
   assert.equal(normalizeSessionId("session_abc"), "abc");
   assert.equal(normalizeSessionId("abc"), "abc");
   assert.equal(normalizeSessionId(""), "");
+});
+
+test("statusSummary：按配置汇总，未配置段不出现，任何缺失不抛错", () => {
+  const dir = mkdtempSync(join(tmpdir(), "opsconv-status-"));
+  try {
+    writeFileSync(join(dir, "VERSION"), "7\n", "utf8");
+    writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "p", version: "1.2.3" }), "utf8");
+    writeFileSync(
+      join(dir, "todo.json"),
+      JSON.stringify({ items: [{ id: "a", type: "ask" }, { id: "b", type: "open" }] }),
+      "utf8",
+    );
+    writeFileSync(join(dir, "MAINT.md"), "# m\n\n## Issues\n- x\n- y\n", "utf8");
+    mkdirSync(join(dir, "mem", "sub"), { recursive: true });
+    writeFileSync(join(dir, "mem", "a.md"), "# a\n", "utf8");
+    writeFileSync(join(dir, "mem", "sub", "b.md"), "# b\n", "utf8");
+    writeFileSync(join(dir, "mem", "c.txt"), "x", "utf8");
+    writeFileSync(
+      join(dir, "log.txt"),
+      "2026-11-01T00:00:00Z  inject v7 session=x chars=100\n2026-11-01T00:01:00Z  guard deny tool=pwsh\n",
+      "utf8",
+    );
+
+    const s = statusSummary({
+      versionFile: join(dir, "VERSION"),
+      packageFile: join(dir, "package.json"),
+      todoFile: join(dir, "todo.json"),
+      maintReport: join(dir, "MAINT.md"),
+      memoryDir: join(dir, "mem"),
+      logFile: join(dir, "log.txt"),
+    });
+    assert.equal(s.bell.version, "7");
+    assert.equal(s.plugin.version, "1.2.3");
+    assert.deepEqual(s.todo, { items: 2, ask: 1, open: 1 });
+    assert.equal(s.maint.issues, 2);
+    assert.equal(s.memory.count, 2);
+    assert.equal(s.log.lastInject.version, "7");
+    assert.equal(s.log.denyCount, 1);
+
+    const bare = statusSummary({});
+    assert.equal(bare.bell, undefined);
+    assert.equal(bare.todo, undefined);
+    assert.equal(bare.memory, undefined);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

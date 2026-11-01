@@ -66,6 +66,10 @@ node install.mjs /path/to/profile --uninstall     # 卸载
     # statusTodoJson: "D:\\my-work\\todo.json"       # 读条目数用
     # hostVersionFile: "D:\\tools\\host_version.txt" # 宿主版本缓存（由你自己的脚本写）
     # asarCandidates: ["C:/apps/DSH/resources/app.asar"]
+    # 可选：只读状态工具 ops_status（agent 可直接调用查看状态），默认关闭
+    # statusTool: true
+    # memoryDir: "D:\\my-memory\\memories"           # 统计记忆库 .md 数量与最近更新时间
+    # todoLastFile: "D:\\my-work\\todo_last.txt"     # 上次校验器输出（可选）
     # 可选：版本引用核对（上一条回复写了非现场版本时警告），默认关闭
     # versionWarning: true
     # versionWarnFile: "D:\\my-work\\VERSION-WARN.md"
