@@ -87,10 +87,10 @@ export function apply(ctx, config = {}) {
   }
   const structGates = buildStructGates(config);
   // 大任务预规划门（2026-11-04）：累计写入不同文件/目录到阈值后，要求存在六段 PLAN.md
-  const planGate = config.planGate !== false;
+  const planGate = config.planGate === true;
   const planGateAfterFiles = Number(config.planGateAfterFiles) > 0 ? Number(config.planGateAfterFiles) : 4;
   const planGateAfterDirs = Number(config.planGateAfterDirs) > 0 ? Number(config.planGateAfterDirs) : 3;
-  const planFile = typeof config.planFile === "string" && config.planFile ? config.planFile : "D:\\software\\ToolsDev\\_tasks\\PLAN.md";
+  const planFile = typeof config.planFile === "string" ? config.planFile : "";
   const FILE_EDIT_TOOLS = new Set(["write", "edit", "multi_edit", "apply_patch", "notebook_edit"]);
   const PLAN_FILES = Symbol.for("dsh.opsConventions.planFiles");
   const PLAN_DIRS = Symbol.for("dsh.opsConventions.planDirs");
@@ -557,7 +557,7 @@ export function apply(ctx, config = {}) {
           }
         }
         // 大任务预规划门（2026-11-04）：累计写入不同文件/目录到阈值后，没有六段 PLAN.md 就拒绝后续写
-        if (planGate && FILE_EDIT_TOOLS.has(exec.name)) {
+        if (planGate && planFile && FILE_EDIT_TOOLS.has(exec.name)) {
           const target = writeTarget(exec);
           if (!isPlanTarget(target) && !planSectionsOk()) {
             const files = sess ? (sess[PLAN_FILES] || new Set()) : globalPlanFiles;
@@ -608,7 +608,7 @@ export function apply(ctx, config = {}) {
       if (result?.isError) return;
       const sess = exec?.agent?.session;
       // 大任务预规划：累计成功写入的不同文件/目录（PLAN.md 本身不计）
-      if (planGate && FILE_EDIT_TOOLS.has(exec?.name)) {
+      if (planGate && planFile && FILE_EDIT_TOOLS.has(exec?.name)) {
         const t = writeTarget(exec);
         if (t && !isPlanTarget(t)) {
           const files = sess ? (sess[PLAN_FILES] || (sess[PLAN_FILES] = new Set())) : globalPlanFiles;
