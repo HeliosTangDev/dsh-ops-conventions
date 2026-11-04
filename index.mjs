@@ -86,6 +86,37 @@ export function apply(ctx, config = {}) {
     return bellExtra;
   }
   const structGates = buildStructGates(config);
+  // 大任务预规划门（2026-11-04）：累计写入不同文件/目录到阈值后，要求存在六段 PLAN.md
+  const planGate = config.planGate !== false;
+  const planGateAfterFiles = Number(config.planGateAfterFiles) > 0 ? Number(config.planGateAfterFiles) : 4;
+  const planGateAfterDirs = Number(config.planGateAfterDirs) > 0 ? Number(config.planGateAfterDirs) : 3;
+  const planFile = typeof config.planFile === "string" && config.planFile ? config.planFile : "D:\\software\\ToolsDev\\_tasks\\PLAN.md";
+  const FILE_EDIT_TOOLS = new Set(["write", "edit", "multi_edit", "apply_patch", "notebook_edit"]);
+  const PLAN_FILES = Symbol.for("dsh.opsConventions.planFiles");
+  const PLAN_DIRS = Symbol.for("dsh.opsConventions.planDirs");
+  const globalPlanFiles = new Set();
+  const globalPlanDirs = new Set();
+  const normPath = (p) => String(p).replace(/\//g, "\\").toLowerCase();
+  const isPlanTarget = (p) => !!p && normPath(p) === normPath(planFile);
+  const writeTarget = (exec) => {
+    const a = exec?.arguments || {};
+    const p = a.path ?? a.file_path ?? a.filePath ?? a.notebook_path ?? a.target_file;
+    if (typeof p === "string") return p;
+    if (Array.isArray(a.paths) && typeof a.paths[0] === "string") return a.paths[0];
+    if (Array.isArray(a.edits)) {
+      const e = a.edits.find((x) => x && (x.path || x.file_path));
+      if (e) return e.path || e.file_path;
+    }
+    return "";
+  };
+  const planSectionsOk = () => {
+    try {
+      const txt = readFileSync(planFile, "utf8");
+      return (txt.match(/^##\s*[1-6]\./gm) || []).length >= 6;
+    } catch {
+      return false;
+    }
+  };
   // 可选：现场状态行 / 版本引用核对（默认关闭；需要的文件路径一律由配置传入）
   const statusEnabled = config.status === true;
   const statusTodoJson = typeof config.statusTodoJson === "string" ? config.statusTodoJson : "";
@@ -525,6 +556,23 @@ export function apply(ctx, config = {}) {
             };
           }
         }
+        // 大任务预规划门（2026-11-04）：累计写入不同文件/目录到阈值后，没有六段 PLAN.md 就拒绝后续写
+        if (planGate && FILE_EDIT_TOOLS.has(exec.name)) {
+          const target = writeTarget(exec);
+          if (!isPlanTarget(target) && !planSectionsOk()) {
+            const files = sess ? (sess[PLAN_FILES] || new Set()) : globalPlanFiles;
+            const dirs = sess ? (sess[PLAN_DIRS] || new Set()) : globalPlanDirs;
+            if (files.size >= planGateAfterFiles || dirs.size >= planGateAfterDirs) {
+              log(`guard deny-plan session=${sess ? (sess.id ?? "default") : "none"} files=${files.size} dirs=${dirs.size} tool=${exec.name}`);
+              return {
+                kind: "deny",
+                reason:
+                  `「操作约定｜大任务预规划」本会话已改 ${files.size} 个文件 / ${dirs.size} 个目录，超过阈值（${planGateAfterFiles} 文件 / ${planGateAfterDirs} 目录）。` +
+                  `先写 ${planFile}（六段：目标/边界/步骤/风险/验收/回滚；模板 ops-skills\\PLAN-TEMPLATE.md），再继续；写 PLAN.md 本身不受拦。`,
+              };
+            }
+          }
+        }
         if (idxRead && !needTodo) return next();
         if (!sess) log(`guard no-session using-global idx=${idxRead} todo=${todoDone} tool=${exec.name}`);
         if (!enforce) {
@@ -559,6 +607,16 @@ export function apply(ctx, config = {}) {
     try {
       if (result?.isError) return;
       const sess = exec?.agent?.session;
+      // 大任务预规划：累计成功写入的不同文件/目录（PLAN.md 本身不计）
+      if (planGate && FILE_EDIT_TOOLS.has(exec?.name)) {
+        const t = writeTarget(exec);
+        if (t && !isPlanTarget(t)) {
+          const files = sess ? (sess[PLAN_FILES] || (sess[PLAN_FILES] = new Set())) : globalPlanFiles;
+          const dirs = sess ? (sess[PLAN_DIRS] || (sess[PLAN_DIRS] = new Set())) : globalPlanDirs;
+          files.add(normPath(t));
+          dirs.add(normPath(dirname(t)));
+        }
+      }
       if (!sess) {
         if (isIndexRead(exec?.name, exec?.arguments, indexPath)) globalReadIndex = true;
         if (isTodoRead(exec?.name, exec?.arguments, todoFile)) globalReadTodo = true;
