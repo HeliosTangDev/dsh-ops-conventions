@@ -786,8 +786,31 @@ export function checkReplyTime(text, opts = {}) {
   }
 }
 
-/** 解析信号文件：每行 `ISO  kind=fail|deny  sid=…  tool=…  msg=…`。只统计窗口内、排除当前会话的条目。 */
-export function signalSummary(text, excludeSid = "", opts = {}) {
+/**
+ * 从 assistant 事件/消息里取**正文**文本（0.9.4）：
+ * 只拼 type 为空或 "text" 的 part，主动排除 reasoning/thinking/tool-* 等，
+ * 否则 Thinking 会被当成“上一条回复”（0.9.3 日志里 head="Key observations:" 就是它）。
+ */
+export function pickAssistantText(o) {
+  if (!o) return "";
+  const c = o.content ?? o.text ?? o.message?.content ?? o.message?.text;
+  const part = (p) => {
+    if (typeof p === "string") return p;
+    if (!p || typeof p !== "object") return "";
+    const t = String(p.type ?? "");
+    if (t && t !== "text") return "";
+    return typeof p.text === "string" ? p.text : "";
+  };
+  if (typeof c === "string") return c;
+  if (Array.isArray(c)) return c.map(part).join("");
+  if (c && typeof c === "object") {
+    const t = String(c.type ?? "");
+    if (!t || t === "text") return typeof c.text === "string" ? c.text : "";
+  }
+  return "";
+}
+
+/** 解析信号文件：每行 `ISO  kind=fail|deny  sid=…  tool=…  msg=…`。只统计窗口内、排除当前会话的条目。 */export function signalSummary(text, excludeSid = "", opts = {}) {
   const windowMs = Number(opts.windowMs) > 0 ? Number(opts.windowMs) : 24 * 3600 * 1000;
   const now = Number(opts.nowMs) > 0 ? Number(opts.nowMs) : Date.now();
   const out = { failures: 0, denied: 0, sessions: 0, samples: [] };

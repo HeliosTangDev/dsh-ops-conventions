@@ -22,6 +22,7 @@ import {
   normalizeSessionId,
   projectionFileCandidates,
   lastUserText,
+  pickAssistantText,
   maintHintText,
   signalSummary,
   signalHintText,
@@ -279,13 +280,7 @@ export function apply(ctx, config = {}) {
     try {
       const d = event?.data ?? {};
       const sid0 = session?.id ?? "default";
-      const pickText = (o) => {
-        if (!o) return "";
-        const c = o.content ?? o.text ?? o.message?.content ?? o.message?.text;
-        if (typeof c === "string") return c;
-        if (Array.isArray(c)) return c.map((x) => (typeof x === "string" ? x : (x && x.text) || "")).join("");
-        return "";
-      };
+      const pickText = (o) => pickAssistantText(o);
       const role = String(d.role ?? d.message?.role ?? event?.role ?? "");
       const type = String(event?.type ?? "");
       if (eventShapeCount < 5) {

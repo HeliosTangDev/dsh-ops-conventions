@@ -1,3 +1,11 @@
+## 0.9.4（2026-11-08）
+
+### 只取回复正文，排除 Thinking
+
+- 0.9.3 日志显示被捕获的是 `head="Key observations:"` / `"Now we see the real bug clearly:"`——那是模型的思考文本，被当成“上一条回复”。
+- 新增 `pickAssistantText()`：只拼 `type` 为空或 `text` 的内容块，排除 `reasoning/thinking/tool-*`；捕获与扫描都改用它。
+- 单测覆盖：reasoning+text 混合时只取 text；纯 reasoning 返回空。
+
 ## 0.9.3（2026-11-08）
 
 ### 修复“把真实回复当摘要跳过”

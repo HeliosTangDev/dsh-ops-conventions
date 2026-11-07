@@ -32,6 +32,7 @@ import {
   statusSummary,
   checkReply,
   checkReplyTime,
+  pickAssistantText,
 } from "../rule.mjs";
 
 test("reminderText：通用版只给版本 + 清单路径，不夹带个人约定", () => {
@@ -293,6 +294,15 @@ test("checkReply：命中返回 id/message；无命中与非法正则不抛错",
   assert.equal(checkReplyTime("状态 bell=v90 @04:20", opts)[0].id, "status-time-stale");
   assert.equal(checkReplyTime("状态 bell=v90", opts).length, 0);
   assert.equal(checkReplyTime("普通回复 @03:40", opts).length, 0);
+
+  // 只取正文：reasoning/tool-* 的 text 不能混进“上一条回复”
+  assert.equal(
+    pickAssistantText({ content: [{ type: "reasoning", text: "think" }, { type: "text", text: "答" }, { type: "tool-call", text: "call" }] }),
+    "答",
+  );
+  assert.equal(pickAssistantText({ content: "plain" }), "plain");
+  assert.equal(pickAssistantText({ message: { content: [{ type: "text", text: "m" }] } }), "m");
+  assert.equal(pickAssistantText({ content: [{ type: "reasoning", text: "only-think" }] }), "");
 });
 test("maintHintText: only the first 4 items are listed, the rest are counted", () => {
   const items = ["a", "b", "c", "d", "e", "f"].map((x) => "- item " + x + " broken").join("\n");
