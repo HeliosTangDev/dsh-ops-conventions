@@ -210,6 +210,7 @@ export function apply(ctx, config = {}) {
   }
 
   const SIGNAL_SEEN = Symbol.for("dsh.opsConventions.signalSeen");
+  const SIGNAL_SEEN_AT = Symbol.for("dsh.opsConventions.signalSeenAt");
   function fmtSignalMsg(v) {
     if (v === null || v === undefined) return "";
     if (typeof v === "string") return v;
@@ -408,18 +409,29 @@ export function apply(ctx, config = {}) {
           log(`maint hint error: ${err?.message ?? String(err)}`);
         }
 
-        // event signals: surface another session's tool failures/denials once per session
+        // event signals: other sessions (>=2) once, and this session (>=3) at most once per 20 min
         try {
-          if (signalsFile && existsSyncSafe(signalsFile) && sess && sess[SIGNAL_SEEN] !== true) {
-            const sum = signalSummary(readFileSync(signalsFile, "utf8"), sid, {});
-            const sh = signalHintText(sum);
-            if (sh) {
-              sess[SIGNAL_SEEN] = true;
-              log(`inject signals session=${sid} fails=${sum.failures} denies=${sum.denied}`);
+          if (signalsFile && existsSyncSafe(signalsFile)) {
+            const text = readFileSync(signalsFile, "utf8");
+            const other = signalSummary(text, sid, {});
+            const mine = signalSummary(text, "", {});
+            const own = { failures: mine.failures - other.failures, denied: mine.denied - other.denied };
+            const lastAt = (sess && sess[SIGNAL_SEEN_AT]) || 0;
+            const cooldown = 20 * 60 * 1000;
+            let hint = "";
+            if (other.failures + other.denied >= 2 && !(sess && sess[SIGNAL_SEEN])) {
+              hint = signalHintText(other);
+              if (sess) sess[SIGNAL_SEEN] = true;
+            } else if (own.failures + own.denied >= 3 && Date.now() - lastAt > cooldown) {
+              hint = signalHintText(own, { scope: "session" });
+              if (sess) sess[SIGNAL_SEEN_AT] = Date.now();
+            }
+            if (hint) {
+              log(`inject signals session=${sid} other=${other.failures + other.denied} own=${own.failures + own.denied}`);
               messages = [
                 ...messages,
                 createUserMessage({
-                  content: [{ type: "text", text: sh }],
+                  content: [{ type: "text", text: hint }],
                   source: { kind: "plugin:dsh-ops-conventions", plugin: "dsh-ops-conventions", form: "instructions" },
                 }),
               ];
@@ -594,6 +606,7 @@ export function apply(ctx, config = {}) {
             const g = missing[0];
             const gate = structGates.find((x) => x.id === g);
             log(`guard deny-struct gate=${g} session=${sess ? (sess.id ?? "default") : "none"} tool=${exec.name}`);
+          appendSignal("deny", sess ? (sess.id ?? "default") : "default", exec.name, "gate=struct:" + g);
             return {
               kind: "deny",
               reason:
@@ -611,6 +624,7 @@ export function apply(ctx, config = {}) {
             const dirs = sess ? (sess[PLAN_DIRS] || new Set()) : globalPlanDirs;
             if (files.size >= planGateAfterFiles || dirs.size >= planGateAfterDirs) {
               log(`guard deny-plan session=${sess ? (sess.id ?? "default") : "none"} files=${files.size} dirs=${dirs.size} tool=${exec.name}`);
+          appendSignal("deny", sess ? (sess.id ?? "default") : "default", exec.name, "gate=plan");
               return {
                 kind: "deny",
                 reason:
@@ -634,7 +648,7 @@ export function apply(ctx, config = {}) {
         const version = readVersion(versionFile);
         const sid = sess?.id ?? "default";
         log(`guard deny session=${sid} tool=${exec.name} v${version} needTodo=${needTodo}`);
-            appendSignal("deny", sid, exec.name, "guard");
+            appendSignal("deny", sid, exec.name, "gate=todo");
         return {
           kind: "deny",
           reason: denyReason(indexPath, version, existsSyncSafe(todoFile) ? todoFile : null, todoCheckCmd, {
@@ -737,11 +751,13 @@ export function apply(ctx, config = {}) {
                 maintReport,
                 memoryDir,
                 logFile,
+                repoDir: typeof config.statusRepoDir === "string" ? config.statusRepoDir : "",
+                markerFile: maintReport ? join(dirname(maintReport), "MAINT-OPEN.md") : "",
               });
             },
           }),
         );
-        log("status tool registered: ops_status");
+        log(`status tool registered: ops_status repo=${config.statusRepoDir ? "yes" : "no"}`);
       })
       .catch((err) => log(`status tool skipped: ${err?.message ?? String(err)}`));
   }

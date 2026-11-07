@@ -312,3 +312,21 @@ test("signalHintText: below threshold is silent, at threshold counts both kinds"
   assert.ok(h.includes("1 次守卫拒绝"));
   assert.ok(h.includes("IMPROVEMENTS.md"));
 });
+
+test("statusSummary: repo refs decide pushed/not-pushed, marker is reported", () => {
+  const dir = mkdtempSync(join(tmpdir(), "dsh-status-"));
+  const git = join(dir, ".git");
+  mkdirSync(join(git, "refs", "heads"), { recursive: true });
+  mkdirSync(join(git, "refs", "remotes", "origin"), { recursive: true });
+  const sha = "0123456789abcdef0123456789abcdef01234567";
+  writeFileSync(join(git, "refs", "heads", "main"), sha + "\n", "utf8");
+  writeFileSync(join(git, "refs", "remotes", "origin", "main"), sha + "\n", "utf8");
+  const s1 = statusSummary({ repoDir: dir, markerFile: join(dir, "MAINT-OPEN.md") });
+  assert.equal(s1.repo.pushed, true);
+  assert.equal(s1.repo.unpushedKnown, true);
+  assert.equal(s1.maintMarker, false);
+  writeFileSync(join(git, "refs", "remotes", "origin", "main"), "fedcba9876543210fedcba9876543210fedcba98\n", "utf8");
+  const s2 = statusSummary({ repoDir: dir });
+  assert.equal(s2.repo.pushed, false, "different remote sha means not pushed");
+  rmSync(dir, { recursive: true, force: true });
+});

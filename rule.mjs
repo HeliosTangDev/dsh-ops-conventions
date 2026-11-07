@@ -598,6 +598,24 @@ function memoryTreeStats(dir) {
  * 只读状态汇总：门铃版本、插件包版本、待办、维护报告、记忆库、最近日志。
  * 任何一段失败只让该段为 null，不抛异常。
  */
+
+/** 读一个 git ref：先 loose 文件，再 packed-refs。返回 40 位 sha 或 ""。 */
+function readGitRef(gitDir, refName) {
+  const loose = join(gitDir, ...refName.split("/"));
+  try {
+    const v = readFileSync(loose, "utf8").trim();
+    if (/^[0-9a-f]{40}$/.test(v)) return v;
+  } catch {}
+  try {
+    const packed = readFileSync(join(gitDir, "packed-refs"), "utf8");
+    for (const line of packed.split(/\r?\n/)) {
+      const m = line.match(/^([0-9a-f]{40})\s+(\S+)$/);
+      if (m && m[2] === refName) return m[1];
+    }
+  } catch {}
+  return "";
+}
+
 export function statusSummary(opts = {}) {
   const out = { generatedAt: new Date().toISOString() };
 
@@ -670,6 +688,24 @@ export function statusSummary(opts = {}) {
       out.log = null;
     }
   }
+  if (opts.repoDir) {
+    try {
+      const gitDir = join(opts.repoDir, ".git");
+      const head = readGitRef(gitDir, "refs/heads/main");
+      const origin = readGitRef(gitDir, "refs/remotes/origin/main");
+      out.repo = {
+        head: head ? head.slice(0, 8) : "",
+        originMain: origin ? origin.slice(0, 8) : "",
+        pushed: !!(head && origin && head === origin),
+        unpushedKnown: !!(head && origin),
+      };
+    } catch {
+      out.repo = null;
+    }
+  }
+  if (opts.markerFile) {
+    try { out.maintMarker = existsSync(opts.markerFile); } catch { out.maintMarker = null; }
+  }
   return out;
 }
 
@@ -728,8 +764,10 @@ export function signalHintText(summary, opts = {}) {
   if (s.failures) parts.push(`${s.failures} 次工具失败`);
   if (s.denied) parts.push(`${s.denied} 次守卫拒绝`);
   const where = s.samples && s.samples.length ? `（${s.samples.join("、")}）` : "";
+  const own = opts.scope === "session";
+  const when = own ? "本会话" : "最近 24h 其他会话";
   return (
-    `[事件信号] 最近 24h 其他会话有 ${parts.join("、")}${where}；` +
+    `[事件信号] ${when}有 ${parts.join("、")}${where}；` +
     `若其中有改进方向，记入 _tools\\misc\\IMPROVEMENTS.md（improve.ps1 -Add），大的直接改。`
   );
 }

@@ -1,3 +1,9 @@
+## 未发布：ops_status 补 git/标记；拒绝原因具体化；本会话信号提示（2026-11-07）
+
+- ops_status 新增 epo（读 .git refs：head/originMain/pushed）与 maintMarker，一次调用拿全现场。
+- 守卫拒绝的 msg 从 `guard` 细化为 `gate=struct:<id>` / `gate=plan` / `gate=todo`。
+- 信号提示新增「本会话」路径：本会话累计 ≥3 条且距上次提示 >20 分钟时提示一次（其他会话仍 ≥2 条、每会话一次）。
+- 测试 31 pass / 0 fail（含 statusSummary repo 字段用例）。
 ## 未发布：事件信号（工具失败 / 守卫拒绝）→ 可观测 + 一次性提示（2026-11-07）
 
 - 新增 `signalsFile` 配置：工具调用失败（`tools/result` 的 `isError`）与守卫拒绝各写一行
