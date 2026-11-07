@@ -246,7 +246,8 @@ test("statusSummary：按配置汇总，未配置段不出现，任何缺失不�
     });
     assert.equal(s.bell.version, "7");
     assert.equal(s.plugin.version, "1.2.3");
-    assert.deepEqual(s.todo, { items: 2, ask: 1, open: 1 });
+    assert.equal(s.todo.items, 2);
+    assert.deepEqual(s.todo.declared, { ask: 1, machine: 1 });
     assert.equal(s.maint.issues, 2);
     assert.equal(s.memory.count, 2);
     assert.equal(s.log.lastInject.version, "7");
@@ -310,7 +311,7 @@ test("signalHintText: below threshold is silent, at threshold counts both kinds"
   const h = signalHintText({ failures: 2, denied: 1, samples: ["bash"] });
   assert.ok(h.includes("2 次工具失败"));
   assert.ok(h.includes("1 次守卫拒绝"));
-  assert.ok(h.includes("IMPROVEMENTS.md"));
+  assert.ok(h.includes("按本机约定处理"));
 });
 
 test("statusSummary: repo refs decide pushed/not-pushed, marker is reported", () => {

@@ -74,6 +74,7 @@ export function apply(ctx, config = {}) {
   const todoFile = typeof config.todoFile === "string" ? config.todoFile : "";
   const maintReport = typeof config.maintReport === "string" ? config.maintReport : "";
   const signalsFile = typeof config.signalsFile === "string" ? config.signalsFile : "";
+  const signalsHint = typeof config.signalsHint === "string" ? config.signalsHint : "";
   const bellExtra = typeof config.bellExtra === "string" ? config.bellExtra : "";
   // 可选：个人补充规则文件（每次注入时现读，改文件不用重启；文件不存在则回退 bellExtra）
   const bellExtraFile = typeof config.bellExtraFile === "string" ? config.bellExtraFile : "";
@@ -420,10 +421,10 @@ export function apply(ctx, config = {}) {
             const cooldown = 20 * 60 * 1000;
             let hint = "";
             if (other.failures + other.denied >= 2 && !(sess && sess[SIGNAL_SEEN])) {
-              hint = signalHintText(other);
+              hint = signalsHint || signalHintText(other);
               if (sess) sess[SIGNAL_SEEN] = true;
             } else if (own.failures + own.denied >= 3 && Date.now() - lastAt > cooldown) {
-              hint = signalHintText(own, { scope: "session" });
+              hint = signalsHint || signalHintText(own, { scope: "session" });
               if (sess) sess[SIGNAL_SEEN_AT] = Date.now();
             }
             if (hint) {

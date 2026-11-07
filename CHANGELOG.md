@@ -1,3 +1,8 @@
+## 未发布：ops_status.todo 用判定值；信号提示去个人化；本会话提示（2026-11-08）
+
+- `ops_status.todo` 改为 `{items, declared:{ask,machine}, verdict:{open,done,ask,wait,err}}`：`ask` 不再按条目类型计数（曾出现 `ask:1` 与 `done=1` 并存的矛盾）。
+- 信号提示文字去掉个人路径（原写 `_tools\misc\IMPROVEMENTS.md`），改为通用句子；需要自定义时用新配置 `signalsHint`。
+- 保留 `signalsFile`/`statusRepoDir` 等均为可选配置，默认关闭，不写死任何机器路径。
 ## 未发布：ops_status 补 git/标记；拒绝原因具体化；本会话信号提示（2026-11-07）
 
 - ops_status 新增 epo（读 .git refs：head/originMain/pushed）与 maintMarker，一次调用拿全现场。

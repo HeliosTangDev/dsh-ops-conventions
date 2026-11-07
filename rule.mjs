@@ -640,15 +640,26 @@ export function statusSummary(opts = {}) {
       const items = Array.isArray(j.items) ? j.items : [];
       out.todo = {
         items: items.length,
-        ask: items.filter((x) => String(x?.type) === "ask").length,
-        open: items.filter((x) => String(x?.type) === "open").length,
+        // declared = how the item is written; NOT the verdict (a done ASK still has type ask)
+        declared: {
+          ask: items.filter((x) => String(x?.type) === "ask").length,
+          machine: items.filter((x) => String(x?.type) !== "ask").length,
+        },
       };
       if (opts.todoLastFile && existsSync(opts.todoLastFile)) {
         const st = statSync(opts.todoLastFile);
         out.todo.lastRun = new Date(st.mtimeMs).toISOString();
         const txt = readFileSync(opts.todoLastFile, "utf8");
         const m = txt.match(/summary:[^\r\n]*/i);
-        if (m) out.todo.lastSummary = m[0].trim();
+        if (m) {
+          out.todo.lastSummary = m[0].trim();
+          const kv = {};
+          for (const part of m[0].replace(/^summary:\s*/i, "").split(/\s+/)) {
+            const mm = part.match(/^([a-z]+)=(\d+)$/i);
+            if (mm) kv[mm[1].toLowerCase()] = Number(mm[2]);
+          }
+          if (Object.keys(kv).length) out.todo.verdict = kv;
+        }
       }
     } catch {
       out.todo = null;
@@ -768,6 +779,6 @@ export function signalHintText(summary, opts = {}) {
   const when = own ? "本会话" : "最近 24h 其他会话";
   return (
     `[事件信号] ${when}有 ${parts.join("、")}${where}；` +
-    `若其中有改进方向，记入 _tools\\misc\\IMPROVEMENTS.md（improve.ps1 -Add），大的直接改。`
+    `若其中有值得改进的方向，按本机约定处理（大的直接改，小的按规则记录）。`
   );
 }
