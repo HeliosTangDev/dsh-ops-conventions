@@ -311,12 +311,11 @@ export function apply(ctx, config = {}) {
         lastAsstBySid.delete(sid0);
       }
       if (txt && (/assistant|agent|model/i.test(role) || /assistant|agent|model|response/i.test(type))) {
-        // 跳过会话压缩摘要等“伪 assistant 文本”（它们会冒充上一条回复）
-        if (
-          /^(User|The user|Assistant|Summary|Conversation summary)\b/i.test(txt.slice(0, 40)) ||
-          /User pushes back|The user (?:asked|said|wants)|conversation summary/i.test(txt.slice(0, 300))
-        ) {
-          log(`asst capture skipped summary-like type=${type} sid=${sid0} len=${txt.length}`);
+        // 只跳过“整段就是摘要”的文本（开头即 User/Summary 等）；
+        // 不能因为正文里引用过 “User pushes back” 就跳过——那会把真实回复丢掉（0.9.2 的 bug）。
+        const head = txt.slice(0, 60);
+        if (/^(User|The user|Assistant|Summary|Conversation summary)\b/i.test(head)) {
+          log(`asst capture skipped summary-like type=${type} sid=${sid0} len=${txt.length} head=${JSON.stringify(head)}`);
           return;
         }
         const cur = String(lastAsstBySid.get(sid0) || "");
