@@ -33,6 +33,8 @@ import {
   checkReply,
   checkReplyTime,
   pickAssistantText,
+  isSummaryLike,
+  betterAssistantText,
 } from "../rule.mjs";
 
 test("reminderText：通用版只给版本 + 清单路径，不夹带个人约定", () => {
@@ -303,6 +305,24 @@ test("checkReply：命中返回 id/message；无命中与非法正则不抛错",
   assert.equal(pickAssistantText({ content: "plain" }), "plain");
   assert.equal(pickAssistantText({ message: { content: [{ type: "text", text: "m" }] } }), "m");
   assert.equal(pickAssistantText({ content: [{ type: "reasoning", text: "only-think" }] }), "");
+});
+
+test("捕获选择：摘要不占位、正文取最长、正文引用摘要词不算摘要", () => {
+  // 摘要类（整段开头就是 User/Summary）必须跳过
+  assert.equal(isSummaryLike('User sent "1" and adds a maxim'), true);
+  assert.equal(isSummaryLike("Summary: earlier we did X"), true);
+  // 正文里引用过这些词不算摘要
+  assert.equal(isSummaryLike("看到问题根源了：日志里写 User pushes back"), false);
+  assert.equal(isSummaryLike(""), false);
+
+  // 摘要不能覆盖已有正文
+  assert.equal(betterAssistantText("最终回复", "User pushes back: x"), "最终回复");
+  // 更长的正文胜出
+  assert.equal(betterAssistantText("短", "更长的最终回复"), "更长的最终回复");
+  // 更短的不覆盖
+  assert.equal(betterAssistantText("更长的最终回复", "短"), "更长的最终回复");
+  // 空候选不改变
+  assert.equal(betterAssistantText("已有", ""), "已有");
 });
 test("maintHintText: only the first 4 items are listed, the rest are counted", () => {
   const items = ["a", "b", "c", "d", "e", "f"].map((x) => "- item " + x + " broken").join("\n");

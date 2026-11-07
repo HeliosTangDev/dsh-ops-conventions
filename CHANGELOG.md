@@ -1,3 +1,11 @@
+## 0.9.5（2026-11-08）
+
+### 捕获选择逻辑按 TDD 重做（先红后绿）
+
+- 新增 `isSummaryLike()` 与 `betterAssistantText()`：摘要不占位、非摘要取更长者；测试先写（RED：模块无导出）再实现（GREEN）。
+- index.mjs 捕获逻辑改用这两个纯函数，替代内联判断，便于回归测试。
+- 流程补硬：门铃 v91 与 `ops-check` 新增「测试先行与先方案」硬性节；`checks.json` 新增 `plugin-tests`（rule + guard 单测必须全绿）作为机械兜底。
+
 ## 0.9.4（2026-11-08）
 
 ### 只取回复正文，排除 Thinking

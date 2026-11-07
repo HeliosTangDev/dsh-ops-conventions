@@ -23,6 +23,8 @@ import {
   projectionFileCandidates,
   lastUserText,
   pickAssistantText,
+  isSummaryLike,
+  betterAssistantText,
   maintHintText,
   signalSummary,
   signalHintText,
@@ -306,17 +308,10 @@ export function apply(ctx, config = {}) {
         lastAsstBySid.delete(sid0);
       }
       if (txt && (/assistant|agent|model/i.test(role) || /assistant|agent|model|response/i.test(type))) {
-        // 只跳过“整段就是摘要”的文本（开头即 User/Summary 等）；
-        // 不能因为正文里引用过 “User pushes back” 就跳过——那会把真实回复丢掉（0.9.2 的 bug）。
-        const head = txt.slice(0, 60);
-        if (/^(User|The user|Assistant|Summary|Conversation summary)\b/i.test(head)) {
-          log(`asst capture skipped summary-like type=${type} sid=${sid0} len=${txt.length} head=${JSON.stringify(head)}`);
-          return;
-        }
         const cur = String(lastAsstBySid.get(sid0) || "");
-        // 一轮里可能有多条 assistant 事件（分段/增量）：保留最长的一条，避免只拿到碎片
-        if (txt.length > cur.length) { lastAsstBySid.set(sid0, txt); lastAccSid = sid0; }
-        log(`asst capture: type=${type} role=${role} sid=${sid0} len=${txt.length} kept=${String(lastAsstBySid.get(sid0) || "").length} head=${JSON.stringify(txt.slice(0, 40))}`);
+        const chosen = betterAssistantText(cur, txt);
+        if (chosen !== cur) { lastAsstBySid.set(sid0, chosen); lastAccSid = sid0; }
+        log(`asst capture: type=${type} role=${role} sid=${sid0} len=${txt.length} kept=${chosen.length} head=${JSON.stringify(txt.slice(0, 40))}${isSummaryLike(txt) ? " (summary-skip)" : ""}`);
       }
     } catch (e) {
       log(`session event capture error: ${e?.message ?? String(e)}`);

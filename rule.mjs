@@ -810,6 +810,21 @@ export function pickAssistantText(o) {
   return "";
 }
 
+/** 整段就是摘要（开头即 User/Summary 等）→ true；正文里引用这些词不算 */
+export function isSummaryLike(text) {
+  const head = String(text ?? "").slice(0, 60);
+  return /^(User|The user|Assistant|Summary|Conversation summary)\b/i.test(head);
+}
+
+/** 同一轮多条候选：摘要不占位，非摘要取更长者 */
+export function betterAssistantText(prev, next) {
+  const p = String(prev ?? "");
+  const n = String(next ?? "");
+  if (!n) return p;
+  if (isSummaryLike(n)) return p;
+  return n.length > p.length ? n : p;
+}
+
 /** 解析信号文件：每行 `ISO  kind=fail|deny  sid=…  tool=…  msg=…`。只统计窗口内、排除当前会话的条目。 */export function signalSummary(text, excludeSid = "", opts = {}) {
   const windowMs = Number(opts.windowMs) > 0 ? Number(opts.windowMs) : 24 * 3600 * 1000;
   const now = Number(opts.nowMs) > 0 ? Number(opts.nowMs) : Date.now();
