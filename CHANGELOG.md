@@ -1,3 +1,12 @@
+## 未发布：事件信号（工具失败 / 守卫拒绝）→ 可观测 + 一次性提示（2026-11-07）
+
+- 新增 `signalsFile` 配置：工具调用失败（`tools/result` 的 `isError`）与守卫拒绝各写一行
+  `ISO  kind=fail|deny  sid=…  tool=…  msg=…`；文件超过 256 KB 自动裁到最近 200 行。
+- 新增纯函数 `signalSummary(text, excludeSid, opts)` / `signalHintText(summary)`（`rule.mjs`，带单测）。
+- 每会话一次：最近 24h 内**其他会话**累计 ≥2 条信号时，注入一行「记入 IMPROVEMENTS.md 或大的直接改」。
+- 三个 profile 已加 `signalsFile: D:\software\ToolsDev\tasks\SIGNALS.log`；备份 `_backups\profile-signals-20261107`。
+- 测试：`node --test --test-isolation=none` 30 pass / 0 fail。
+
 ## 0.8.2（2026-11-01）
 
 ### ops_status 注册修复
@@ -124,7 +133,8 @@ otes_check.py（只读检查：BOM/CRLF/全角空格/内联样式/文件命名�
 ### 修复：压缩提示从未触发（路径拼错）
 
 - 现象：会话投影缓存里明明有 compaction 事件（本机实测某会话 3 次 / 248 条事件），但插件日志里 compaction baseline / compaction hint **一条都没有**。
-- 根因：projectionPath(sid) 用 `session-{sid}.json` 拼路径，而 DSH 传进来的 sid **本身已带 session- 前缀** → 拼成 session-session-*.json，找不到文件，eadCompactionStats 永远返回 null。
+- 根因：projectionPath(sid) 用 `session-{sid}.json` 拼路径，而 DSH 传进来的 sid **本身已带 session- 前缀** → 拼成 session-session-*.json，找不到文件，
+eadCompactionStats 永远返回 null。
 - 修复：新增 
 ormalizeSessionId()（剥前缀）与 projectionFileCandidates()（返回候选文件名），projectionPath 先按候选名精确查、再按裸 uuid 前缀扫目录；带/不带前缀都能命中。
 - 单测：新增 1 条（带 session-/session_/裸 uuid 三种输入归一 + 候选名 + 空输入）。
@@ -145,7 +155,8 @@ ormalizeSessionId()（剥前缀）与 projectionFileCandidates()（返回候选�
 ### 改变策略：黑名单 → 白名单（未知即拦）
 
 - 之前是**黑名单**：只拦"已知的写工具"，所以每出现一种新写法（shell、MCP、子代理、无会话…）就漏一次，需要逐个补口——这是"守正门、放后门"。
-- 现在改成**白名单**：只有**明确只读**的工具名（ead/search/find/glob/grep/list/ls/status/get/query/inspect/fetch/health/version/...）才放行；**其余一律要求先读约定**，包括：
+- 现在改成**白名单**：只有**明确只读**的工具名（
+ead/search/find/glob/grep/list/ls/status/get/query/inspect/fetch/health/version/...）才放行；**其余一律要求先读约定**，包括：
   - 内置写工具与 shell 写命令（同前）；
   - MCP 未知工具（如 mcp__newsrv__upload）；
   - dshm_*、schedule_*、gent_teams_* 等会改状态的工具；
@@ -174,8 +185,11 @@ o-index 三种放行都会写日志（guard skip reason=...），审计能看出
 ### 修复
 
 - **硬拦截补口**：原先只拦 write/edit/multi_edit/apply_patch/notebook_edit，**shell 类工具（pwsh/ash）不在名单**，导致"用命令行写文件/跑命令"可以整条绕过守卫（2026-10-21 实测：多轮用 pwsh 写文件未被拦）。
-- 新增 isShellWrite()：shell 工具的命令串里出现写类动词（Set-Content/Copy-Item/Remove-Item/m/mv/> 重定向/git push|tag|commit/ov write|rm|skills add/
-pm i|publish/elease.mjs/schtasks/eg add）即视为写操作，纳入同一守卫；只读命令（Get-ChildItem/git status/
+- 新增 isShellWrite()：shell 工具的命令串里出现写类动词（Set-Content/Copy-Item/Remove-Item/
+m/mv/> 重定向/git push|tag|commit/ov write|rm|skills add/
+pm i|publish/
+elease.mjs/schtasks/
+eg add）即视为写操作，纳入同一守卫；只读命令（Get-ChildItem/git status/
 ode --test）不拦。
 - 单测 13/13 通过（新增 8 正例 + 6 反例）。
 # Changelog

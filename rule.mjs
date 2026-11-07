@@ -693,3 +693,43 @@ export function checkReply(text, rules = []) {
   }
   return out;
 }
+
+/** 解析信号文件：每行 `ISO  kind=fail|deny  sid=…  tool=…  msg=…`。只统计窗口内、排除当前会话的条目。 */
+export function signalSummary(text, excludeSid = "", opts = {}) {
+  const windowMs = Number(opts.windowMs) > 0 ? Number(opts.windowMs) : 24 * 3600 * 1000;
+  const now = Number(opts.nowMs) > 0 ? Number(opts.nowMs) : Date.now();
+  const out = { failures: 0, denied: 0, sessions: 0, samples: [] };
+  const sids = new Set();
+  for (const line of String(text ?? "").split(/\r?\n/)) {
+    if (!line.trim()) continue;
+    const m = line.match(/^(\S+)\s+kind=(\w+)(?:\s+sid=([^\s]*))?(?:\s+tool=([^\s]*))?/);
+    if (!m) continue;
+    const at = Date.parse(m[1]);
+    if (!Number.isFinite(at) || now - at > windowMs) continue;
+    const sid = m[3] || "";
+    if (excludeSid && sid === excludeSid) continue;
+    if (m[2] === "fail") out.failures++;
+    else if (m[2] === "deny") out.denied++;
+    else continue;
+    if (sid) sids.add(sid);
+    if (out.samples.length < 3 && m[4]) out.samples.push(m[4]);
+  }
+  out.sessions = sids.size;
+  return out;
+}
+
+/** 信号摘要 → 一行注入文本；不足阈值返回 ""（默认 2 起）。 */
+export function signalHintText(summary, opts = {}) {
+  const s = summary || {};
+  const min = Number(opts.min) > 0 ? Number(opts.min) : 2;
+  const total = (s.failures || 0) + (s.denied || 0);
+  if (total < min) return "";
+  const parts = [];
+  if (s.failures) parts.push(`${s.failures} 次工具失败`);
+  if (s.denied) parts.push(`${s.denied} 次守卫拒绝`);
+  const where = s.samples && s.samples.length ? `（${s.samples.join("、")}）` : "";
+  return (
+    `[事件信号] 最近 24h 其他会话有 ${parts.join("、")}${where}；` +
+    `若其中有改进方向，记入 _tools\\misc\\IMPROVEMENTS.md（improve.ps1 -Add），大的直接改。`
+  );
+}

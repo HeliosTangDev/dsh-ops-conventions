@@ -23,6 +23,8 @@ import {
   projectionFileCandidates,
   lastUserText,
   maintHintText,
+  signalSummary,
+  signalHintText,
   readVersion,
   reminderText,
   liveStatusText,
@@ -71,6 +73,7 @@ export function apply(ctx, config = {}) {
   // 可选：待办镜像（默认不启用；配置 todoFile 才参与硬拦截）
   const todoFile = typeof config.todoFile === "string" ? config.todoFile : "";
   const maintReport = typeof config.maintReport === "string" ? config.maintReport : "";
+  const signalsFile = typeof config.signalsFile === "string" ? config.signalsFile : "";
   const bellExtra = typeof config.bellExtra === "string" ? config.bellExtra : "";
   // 可选：个人补充规则文件（每次注入时现读，改文件不用重启；文件不存在则回退 bellExtra）
   const bellExtraFile = typeof config.bellExtraFile === "string" ? config.bellExtraFile : "";
@@ -204,6 +207,28 @@ export function apply(ctx, config = {}) {
     } catch (e) {
       log(`rotate warn file failed: ${e?.message ?? String(e)}`);
     }
+  }
+
+  const SIGNAL_SEEN = Symbol.for("dsh.opsConventions.signalSeen");
+  function fmtSignalMsg(v) {
+    if (v === null || v === undefined) return "";
+    if (typeof v === "string") return v;
+    if (typeof v.message === "string" && v.message) return v.message;
+    try { return JSON.stringify(v); } catch { return String(v); }
+  }
+
+  function appendSignal(kind, sid, tool, msg) {
+    if (!signalsFile) return;
+    try {
+      appendFileSync(signalsFile, `${new Date().toISOString()}  kind=${kind}  sid=${sid || ""}  tool=${tool || ""}  msg=${String(msg || "").replace(/\s+/g, " ").slice(0, 160)}\n`, "utf8");
+      // keep the file small: trim to the last 200 lines once it passes 256 KB
+      try {
+        if (statSync(signalsFile).size > 262144) {
+          const keep = readFileSync(signalsFile, "utf8").split("\n").filter(Boolean).slice(-200);
+          writeFileSync(signalsFile, keep.join("\n") + "\n", "utf8");
+        }
+      } catch {}
+    } catch {}
   }
 
   function log(line) {
@@ -382,6 +407,28 @@ export function apply(ctx, config = {}) {
         } catch (err) {
           log(`maint hint error: ${err?.message ?? String(err)}`);
         }
+
+        // event signals: surface another session's tool failures/denials once per session
+        try {
+          if (signalsFile && existsSyncSafe(signalsFile) && sess && sess[SIGNAL_SEEN] !== true) {
+            const sum = signalSummary(readFileSync(signalsFile, "utf8"), sid, {});
+            const sh = signalHintText(sum);
+            if (sh) {
+              sess[SIGNAL_SEEN] = true;
+              log(`inject signals session=${sid} fails=${sum.failures} denies=${sum.denied}`);
+              messages = [
+                ...messages,
+                createUserMessage({
+                  content: [{ type: "text", text: sh }],
+                  source: { kind: "plugin:dsh-ops-conventions", plugin: "dsh-ops-conventions", form: "instructions" },
+                }),
+              ];
+            }
+          }
+        } catch (err) {
+          log(`signal hint error: ${err?.message ?? String(err)}`);
+        }
+
 
         // 会话被自动压缩过 → 次数增加时注入一次提示。
         // 这是机械触发器：不依赖模型自己感知"会话长了"，压缩事件是 DSH 自己记的。
@@ -587,6 +634,7 @@ export function apply(ctx, config = {}) {
         const version = readVersion(versionFile);
         const sid = sess?.id ?? "default";
         log(`guard deny session=${sid} tool=${exec.name} v${version} needTodo=${needTodo}`);
+            appendSignal("deny", sid, exec.name, "guard");
         return {
           kind: "deny",
           reason: denyReason(indexPath, version, existsSyncSafe(todoFile) ? todoFile : null, todoCheckCmd, {
@@ -605,7 +653,10 @@ export function apply(ctx, config = {}) {
   // 观察成功的 read INDEX.md / tasks\OPEN.md，给本会话记「已读」
   ctx.on("tools/result", (exec, result) => {
     try {
-      if (result?.isError) return;
+      if (result?.isError) {
+        appendSignal("fail", exec?.agent?.session?.id ?? "default", exec?.name, fmtSignalMsg(result?.error ?? result?.message ?? "isError"));
+        return;
+      }
       const sess = exec?.agent?.session;
       // 大任务预规划：累计成功写入的不同文件/目录（PLAN.md 本身不计）
       if (planGate && planFile && FILE_EDIT_TOOLS.has(exec?.name)) {

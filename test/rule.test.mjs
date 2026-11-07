@@ -19,6 +19,8 @@ import {
   isShellWrite,
   isTodoCheck,
   maintHintText,
+  signalSummary,
+  signalHintText,
   needsGuard,
   normalizeSessionId,
   readVersion,
@@ -281,4 +283,32 @@ test("maintHintText: only the first 4 items are listed, the rest are counted", (
   assert.ok(h.includes("6 项待处理"));
   assert.ok(h.includes("等 6 项"));
   assert.ok(!h.includes("item f"));
+});
+
+test("signalSummary: window + sid exclusion + kind counting", () => {
+  const now = Date.parse("2026-11-07T12:00:00Z");
+  const iso = (msAgo) => new Date(now - msAgo).toISOString();
+  const text = [
+    `${iso(1000)}  kind=fail  sid=A  tool=bash  msg=boom`,
+    `${iso(2000)}  kind=deny  sid=A  tool=write  msg=guard`,
+    `${iso(49 * 3600 * 1000)}  kind=fail  sid=B  tool=edit  msg=old`,   // outside 24h window
+    `${iso(3000)}  kind=ok    sid=C  tool=read  msg=fine`,              // unknown kind
+  ].join("\n");
+  const s = signalSummary(text, "A", { nowMs: now });
+  assert.equal(s.failures, 0, "own sid excluded");
+  assert.equal(s.denied, 0);
+  assert.equal(s.sessions, 0);
+  const s2 = signalSummary(text, "Z", { nowMs: now });
+  assert.equal(s2.failures, 1, "old line outside window");
+  assert.equal(s2.denied, 1);
+  assert.equal(s2.sessions, 1);
+});
+
+test("signalHintText: below threshold is silent, at threshold counts both kinds", () => {
+  assert.equal(signalHintText({ failures: 1, denied: 0 }), "");
+  assert.equal(signalHintText({ failures: 0, denied: 0 }), "");
+  const h = signalHintText({ failures: 2, denied: 1, samples: ["bash"] });
+  assert.ok(h.includes("2 次工具失败"));
+  assert.ok(h.includes("1 次守卫拒绝"));
+  assert.ok(h.includes("IMPROVEMENTS.md"));
 });
