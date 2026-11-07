@@ -545,6 +545,7 @@ export function apply(ctx, config = {}) {
             if (replyChecks.length) {
               const hits = checkReply(txt, replyChecks);
               const key = hits.map((h) => h.id).sort().join(",");
+              log(`reply-scan len=${txt.length} hits=${hits.length} ids=${key || "-"} head=${JSON.stringify(txt.slice(0, 60))}`);
               if (hits.length) {
                 // 记录违规（供门禁使用）；同一 key 连续出现则 turns+1
                 const prev = sess ? sess[REPLY_VIOLATION] : replyViolationGlobal;
