@@ -31,6 +31,7 @@ import {
   statusSummary,
   staleClaimVersions,
   checkReply,
+  checkReplyTime,
   bellIntegrity,
   resolveLogFile,
   resolveSkillsDir,
@@ -140,6 +141,9 @@ export function apply(ctx, config = {}) {
   const replyWarnedBySid = new Map();
   // 可选：把回复违规升级为门禁（只拦写类工具，最多罚 1 轮，避免死锁）
   const replyCheckBlock = config.replyCheckBlock === true;
+  // 可选：检查回复里最后一个 @HH:mm 是否本轮（超时/未来即违规）
+  const replyTimeCheck =
+    config.replyTimeCheck && typeof config.replyTimeCheck === "object" ? config.replyTimeCheck : null;
   const delivered = new Map(); // sessionId -> version（兜底）
   const compactionSeen = new Map(); // sessionId -> 已提示过的压缩次数（无 session 对象时兜底）
   const projectionCache = new Map(); // path -> { mtimeMs, size, stats }
@@ -307,10 +311,18 @@ export function apply(ctx, config = {}) {
         lastAsstBySid.delete(sid0);
       }
       if (txt && (/assistant|agent|model/i.test(role) || /assistant|agent|model|response/i.test(type))) {
+        // 跳过会话压缩摘要等“伪 assistant 文本”（它们会冒充上一条回复）
+        if (
+          /^(User|The user|Assistant|Summary|Conversation summary)\b/i.test(txt.slice(0, 40)) ||
+          /User pushes back|The user (?:asked|said|wants)|conversation summary/i.test(txt.slice(0, 300))
+        ) {
+          log(`asst capture skipped summary-like type=${type} sid=${sid0} len=${txt.length}`);
+          return;
+        }
         const cur = String(lastAsstBySid.get(sid0) || "");
         // 一轮里可能有多条 assistant 事件（分段/增量）：保留最长的一条，避免只拿到碎片
         if (txt.length > cur.length) { lastAsstBySid.set(sid0, txt); lastAccSid = sid0; }
-        log(`asst capture: type=${type} role=${role} sid=${sid0} len=${txt.length} kept=${String(lastAsstBySid.get(sid0) || "").length}`);
+        log(`asst capture: type=${type} role=${role} sid=${sid0} len=${txt.length} kept=${String(lastAsstBySid.get(sid0) || "").length} head=${JSON.stringify(txt.slice(0, 40))}`);
       }
     } catch (e) {
       log(`session event capture error: ${e?.message ?? String(e)}`);
@@ -543,7 +555,8 @@ export function apply(ctx, config = {}) {
               ];
             }
             if (replyChecks.length) {
-              const hits = checkReply(txt, replyChecks);
+              let hits = checkReply(txt, replyChecks);
+              if (replyTimeCheck) hits = hits.concat(checkReplyTime(txt, { ...replyTimeCheck, nowMs: Date.now() }));
               const key = hits.map((h) => h.id).sort().join(",");
               log(`reply-scan len=${txt.length} hits=${hits.length} ids=${key || "-"} head=${JSON.stringify(txt.slice(0, 60))}`);
               if (hits.length) {

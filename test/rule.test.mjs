@@ -31,6 +31,7 @@ import {
   structGatesFor,
   statusSummary,
   checkReply,
+  checkReplyTime,
 } from "../rule.mjs";
 
 test("reminderText：通用版只给版本 + 清单路径，不夹带个人约定", () => {
@@ -283,6 +284,15 @@ test("checkReply：命中返回 id/message；无命中与非法正则不抛错",
   assert.equal(checkReply("bell=v17 无时间", req).length, 1);
   assert.equal(checkReply("bell=v17 @03:50", req).length, 0);
   assert.equal(checkReply("没有状态句", req).length, 0);
+
+  // 时间新鲜度：只看最后一个 @HH:mm，超过阈值/在未来才算违规
+  const now = new Date(2026, 10, 8, 4, 0, 0);
+  const opts = { now, trigger: "bell=v\\d+", maxAgeMinutes: 10, maxFutureMinutes: 5 };
+  assert.equal(checkReplyTime("状态 bell=v90 @03:55", opts).length, 0);
+  assert.equal(checkReplyTime("状态 bell=v90 @03:40", opts)[0].id, "status-time-stale");
+  assert.equal(checkReplyTime("状态 bell=v90 @04:20", opts)[0].id, "status-time-stale");
+  assert.equal(checkReplyTime("状态 bell=v90", opts).length, 0);
+  assert.equal(checkReplyTime("普通回复 @03:40", opts).length, 0);
 });
 test("maintHintText: only the first 4 items are listed, the rest are counted", () => {
   const items = ["a", "b", "c", "d", "e", "f"].map((x) => "- item " + x + " broken").join("\n");

@@ -752,6 +752,40 @@ export function checkReply(text, rules = []) {
   return out;
 }
 
+/**
+ * 时间新鲜度检查（0.9.2）：取回复中最后一个 `@HH:mm`，与当前时间比较。
+ * 只在该回复出现状态触发词时生效；缺时间格式的情况交给 require 规则。
+ * @returns {Array<{id,message,match}>}
+ */
+export function checkReplyTime(text, opts = {}) {
+  const t = String(text ?? "");
+  if (!t) return [];
+  try {
+    const trigger = opts.trigger ? new RegExp(String(opts.trigger)) : /bell=v\d+|现场状态/;
+    if (!trigger.test(t)) return [];
+    const times = [...t.matchAll(/@(\d{1,2}):(\d{2})/g)];
+    if (!times.length) return [];
+    const last = times[times.length - 1];
+    const now = opts.now instanceof Date ? opts.now : new Date(Number(opts.nowMs) || Date.now());
+    const d = new Date(now.getFullYear(), now.getMonth(), now.getDate(), Number(last[1]), Number(last[2]), 0, 0);
+    let ageMin = (now.getTime() - d.getTime()) / 60000;
+    // 跨零点：时间“在未来”超过 1 小时，按昨天算
+    if (ageMin < -60) ageMin += 1440;
+    const maxAge = Number(opts.maxAgeMinutes) > 0 ? Number(opts.maxAgeMinutes) : 10;
+    const maxFuture = Number(opts.maxFutureMinutes) >= 0 ? Number(opts.maxFutureMinutes) : 5;
+    const id = String(opts.id || "status-time-stale");
+    if (ageMin > maxAge) {
+      return [{ id, message: `最后时间 ${last[0]} 已过期（约 ${Math.round(ageMin)} 分钟前，允许 ${maxAge}）`, match: last[0] }];
+    }
+    if (ageMin < -maxFuture) {
+      return [{ id, message: `最后时间 ${last[0]} 在未来（约 ${Math.abs(Math.round(ageMin))} 分钟）`, match: last[0] }];
+    }
+    return [];
+  } catch {
+    return [];
+  }
+}
+
 /** 解析信号文件：每行 `ISO  kind=fail|deny  sid=…  tool=…  msg=…`。只统计窗口内、排除当前会话的条目。 */
 export function signalSummary(text, excludeSid = "", opts = {}) {
   const windowMs = Number(opts.windowMs) > 0 ? Number(opts.windowMs) : 24 * 3600 * 1000;
