@@ -277,6 +277,12 @@ test("checkReply：命中返回 id/message；无命中与非法正则不抛错",
   assert.ok(sections.some((h) => h.id === "no-todo"));
   const both = checkReply("## 待办\n- 无\n\n## 自检\n- 无", rules);
   assert.equal(both.length, 0);
+
+  // require：触发词命中但缺少必需内容时才算违规
+  const req = [{ id: "status-needs-time", pattern: "bell=v\\d+", require: "@\\d{1,2}:\\d{2}", message: "带时间" }];
+  assert.equal(checkReply("bell=v17 无时间", req).length, 1);
+  assert.equal(checkReply("bell=v17 @03:50", req).length, 0);
+  assert.equal(checkReply("没有状态句", req).length, 0);
 });
 test("maintHintText: only the first 4 items are listed, the rest are counted", () => {
   const items = ["a", "b", "c", "d", "e", "f"].map((x) => "- item " + x + " broken").join("\n");

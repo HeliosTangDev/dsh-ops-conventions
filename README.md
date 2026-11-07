@@ -80,6 +80,11 @@ node install.mjs /path/to/profile --uninstall     # 卸载
     #   - id: no-next-time
     #     pattern: "下次注意"
     #     message: "不许用「下次注意」结案"
+    #   - id: status-needs-time        # pattern 命中后，require 不命中才算违规
+    #     pattern: "bell=v\\d+"
+    #     require: "@\\d{1,2}:\\d{2}"
+    #     message: "报状态要带命令、采样时间与数据年龄"
+    # replyCheckBlock: true           # 违规后本轮拒绝写类工具（连续两轮自动解除）
   disabled: false
 ```
 

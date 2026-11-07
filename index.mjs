@@ -138,6 +138,8 @@ export function apply(ctx, config = {}) {
   const replyWarnFile =
     typeof config.replyWarnFile === "string" && config.replyWarnFile ? config.replyWarnFile : versionWarnFile;
   const replyWarnedBySid = new Map();
+  // 可选：把回复违规升级为门禁（只拦写类工具，最多罚 1 轮，避免死锁）
+  const replyCheckBlock = config.replyCheckBlock === true;
   const delivered = new Map(); // sessionId -> version（兜底）
   const compactionSeen = new Map(); // sessionId -> 已提示过的压缩次数（无 session 对象时兜底）
   const projectionCache = new Map(); // path -> { mtimeMs, size, stats }
@@ -263,6 +265,8 @@ export function apply(ctx, config = {}) {
   let prevReplyGlobal = "";           // fallback: last completed reply regardless of session id
   let lastAccSid = "";                // session id that produced lastAsstBySid's newest content
   const staleWarnedBySid = new Map();
+  const REPLY_VIOLATION = Symbol.for("dsh.opsConventions.replyViolation");
+  let replyViolationGlobal = null; // 无 session（子代理等）时兜底
 
   // 在回复产生时缓存最后一条 assistant 文本（pre-step 的 messages 里看不到 assistant，
   // 这里用 session/event 抓，供下一轮版本核对使用）。
@@ -541,29 +545,40 @@ export function apply(ctx, config = {}) {
             if (replyChecks.length) {
               const hits = checkReply(txt, replyChecks);
               const key = hits.map((h) => h.id).sort().join(",");
-              if (hits.length && replyWarnedBySid.get(sid) !== key) {
-                replyWarnedBySid.set(sid, key);
-                log(`reply-check: ${hits.map((h) => h.id).join(",")}`);
-                try {
-                  if (replyWarnFile) {
-                    appendRotated(
-                      replyWarnFile,
-                      `- ${new Date().toISOString()} session=${sid} reply=${hits.map((h) => h.id).join(",")}`,
-                    );
-                  }
-                } catch {}
-                messages = [
-                  ...messages,
-                  createUserMessage({
-                    content: [
-                      {
-                        type: "text",
-                        text: `[回复核对] 上一条回复命中：${hits.map((h) => `${h.id}（${h.message}）`).join("；")}；按清单修正。`,
-                      },
-                    ],
-                    source: { kind: "plugin:dsh-ops-conventions", plugin: "dsh-ops-conventions", form: "instructions" },
-                  }),
-                ];
+              if (hits.length) {
+                // 记录违规（供门禁使用）；同一 key 连续出现则 turns+1
+                const prev = sess ? sess[REPLY_VIOLATION] : replyViolationGlobal;
+                const turns = prev && prev.key === key ? (prev.turns || 1) + 1 : 1;
+                const rec = { key, ids: hits.map((h) => h.id), turns };
+                if (sess) sess[REPLY_VIOLATION] = rec; else replyViolationGlobal = rec;
+                if (replyWarnedBySid.get(sid) !== key) {
+                  replyWarnedBySid.set(sid, key);
+                  log(`reply-check: ${hits.map((h) => h.id).join(",")} turns=${turns}`);
+                  try {
+                    if (replyWarnFile) {
+                      appendRotated(
+                        replyWarnFile,
+                        `- ${new Date().toISOString()} session=${sid} reply=${hits.map((h) => h.id).join(",")} turns=${turns}`,
+                      );
+                    }
+                  } catch {}
+                  messages = [
+                    ...messages,
+                    createUserMessage({
+                      content: [
+                        {
+                          type: "text",
+                          text: `[回复核对] 上一条回复命中：${hits.map((h) => `${h.id}（${h.message}）`).join("；")}；按清单修正。`,
+                        },
+                      ],
+                      source: { kind: "plugin:dsh-ops-conventions", plugin: "dsh-ops-conventions", form: "instructions" },
+                    }),
+                  ];
+                }
+              } else if (sess ? sess[REPLY_VIOLATION] : replyViolationGlobal) {
+                if (sess) delete sess[REPLY_VIOLATION]; else replyViolationGlobal = null;
+                replyWarnedBySid.delete(sid);
+                log(`reply-check cleared session=${sid}`);
               }
             }
           }
@@ -593,6 +608,26 @@ export function apply(ctx, config = {}) {
         const writeAttempt = needsGuard(exec.name, exec.arguments, blockedTools);
         if (!writeAttempt) return next();
         const sess = exec?.agent?.session;
+        // 回复合规门（可选，2026-11-08）：上一轮回复违规 → 本轮拒绝写类工具；
+        // 同一违规连续两轮则自动解除（防误报死锁）。
+        if (replyCheckBlock) {
+          const rv = sess ? sess[REPLY_VIOLATION] : replyViolationGlobal;
+          if (rv) {
+            if (rv.turns >= 2) {
+              if (sess) delete sess[REPLY_VIOLATION]; else replyViolationGlobal = null;
+              log(`guard reply-check auto-clear ids=${rv.key} session=${sess ? (sess.id ?? "default") : "none"}`);
+            } else {
+              log(`guard deny-reply-check ids=${rv.key} session=${sess ? (sess.id ?? "default") : "none"} tool=${exec.name}`);
+              appendSignal("deny", sess ? (sess.id ?? "default") : "default", exec.name, "gate=reply-check:" + rv.key);
+              return {
+                kind: "deny",
+                reason:
+                  `「操作约定｜回复核对」上一条回复命中 ${rv.key}。` +
+                  "按约定补上缺失内容（例如报状态要带命令、采样时间与数据年龄）后，再重试本次写操作。",
+              };
+            }
+          }
+        }
         // 有会话用会话标记；无会话（子代理等）用全局标记，不能直接放行
         const idxRead = sess ? !!sess[READ_INDEX] : globalReadIndex;
         // 待办门只认「真的跑过校验器」：读 OPEN.md 只是读规则，不再算数

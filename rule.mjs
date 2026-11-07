@@ -721,9 +721,10 @@ export function statusSummary(opts = {}) {
 }
 
 /**
- * 回复合规扫描（通用，2026-11-01）：rules=[{id, pattern, message}]。
- * 只在上一条助手回复上做正则匹配，命中返回 [{id, message, match}]。
- * 非法正则/缺字段的规则被跳过，不抛异常。
+ * 回复合规扫描（通用）：rules=[{id, pattern, require?, message}]。
+ * - pattern 命中 = 触发；
+ * - 若规则带 require，则要求 require 也命中，否则记为违规（例：说到 bell=vN 必须带 @HH:mm）。
+ * 非法正则/缺字段被跳过，不抛异常。
  */
 export function checkReply(text, rules = []) {
   const out = [];
@@ -732,8 +733,18 @@ export function checkReply(text, rules = []) {
   for (const r of rules) {
     if (!r || !r.id || !r.pattern) continue;
     try {
+      if (!new RegExp(String(r.pattern)).test(t)) continue;
+      if (r.require) {
+        let ok = false;
+        try {
+          ok = new RegExp(String(r.require)).test(t);
+        } catch {
+          ok = false;
+        }
+        if (ok) continue;
+      }
       const m = new RegExp(String(r.pattern)).exec(t);
-      if (m) out.push({ id: String(r.id), message: String(r.message || r.id), match: String(m[0]).slice(0, 60) });
+      out.push({ id: String(r.id), message: String(r.message || r.id), match: String(m ? m[0] : "").slice(0, 60) });
     } catch {
       /* 非法正则跳过 */
     }

@@ -1,3 +1,11 @@
+## 0.9.0（2026-11-08）
+
+### replyChecks 支持 require 与门禁升级
+
+- 规则新增可选 `require`：`pattern` 命中后，若 `require` 不命中才记为违规。例：说到 `bell=vN` 但全文没有 `@HH:mm` → 违规。
+- 新增可选 `replyCheckBlock: true`：上一轮回复违规 → **本轮拒绝写类工具**，直到下一轮扫描确认合规；同一违规连续两轮自动解除（防误报死锁），只读与校验器命令始终放行。
+- 边界不变：只能在下一轮发现并惩罚，不能阻止违规回复发出。
+
 ## 未发布：ops_status.todo 用判定值；信号提示去个人化；本会话提示（2026-11-08）
 
 - `ops_status.todo` 改为 `{items, declared:{ask,machine}, verdict:{open,done,ask,wait,err}}`：`ask` 不再按条目类型计数（曾出现 `ask:1` 与 `done=1` 并存的矛盾）。

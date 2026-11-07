@@ -41,8 +41,8 @@ function session(id) {
   return { id };
 }
 
-async function enterTurn(handlers, sess, text) {
-  const decision = { kind: "enter", messages: [{ role: "user", content: text }] };
+async function enterTurn(handlers, sess, text, extraMessages = []) {
+  const decision = { kind: "enter", messages: [...extraMessages, { role: "user", content: text }] };
   return handlers.get("agent/pre-step")(
     { agent: { session: sess }, messages: decision.messages },
     async () => decision,
@@ -168,4 +168,35 @@ test("可选维护报告：配置 maintReport 才注入 Issues 摘要", async ()
   const { handlers } = await loadPlugin({ maintReport: report });
   const r = await enterTurn(handlers, session("s-maint"), "你好");
   assert.ok(JSON.stringify(r.messages).includes("维护报告"));
+});
+
+test("回复核对门：上一轮违规拒写，合规后解除，连续两轮自动放行", async () => {
+  const replyChecks = [
+    { id: "status-needs-time", pattern: "bell=v\\d+", require: "@\\d{1,2}:\\d{2}", message: "报状态要带采样时间" },
+  ];
+  const { handlers, indexPath } = await loadPlugin({ replyChecks, replyCheckBlock: true });
+  const bad = { role: "assistant", content: [{ type: "text", text: "现场 bell=v17" }] };
+  const good = { role: "assistant", content: [{ type: "text", text: "bell=v17 @03:50，数据 1 分钟" }] };
+
+  const s = session("s-reply");
+  await enterTurn(handlers, s, "你好");
+  markRead(handlers, s, indexPath);
+  const r2 = await enterTurn(handlers, s, "继续", [bad]);
+  assert.ok(JSON.stringify(r2.messages).includes("回复核对"));
+  const denied = await tryTool(handlers, s, "write");
+  assert.equal(denied.kind, "deny");
+  assert.ok(denied.reason.includes("回复核对"));
+  assert.equal((await tryTool(handlers, s, "read")).kind, "allow");
+
+  await enterTurn(handlers, s, "继续", [good]);
+  assert.equal((await tryTool(handlers, s, "write")).kind, "allow");
+
+  // 连续两轮同一违规：第二轮自动解除，避免误报死锁
+  const s2 = session("s-reply2");
+  await enterTurn(handlers, s2, "你好");
+  markRead(handlers, s2, indexPath);
+  await enterTurn(handlers, s2, "继续", [bad]);
+  assert.equal((await tryTool(handlers, s2, "write")).kind, "deny");
+  await enterTurn(handlers, s2, "继续", [bad]);
+  assert.equal((await tryTool(handlers, s2, "write")).kind, "allow");
 });
