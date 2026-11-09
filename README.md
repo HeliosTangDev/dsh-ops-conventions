@@ -48,6 +48,7 @@ node install.mjs /path/to/profile --uninstall     # 卸载
 - id: dsh-ops-conventions
   name: "dsh-ops-conventions"
   config:
+    enabled: true                            # 总开关：false = 保持加载但零行为（不做注入/拦截/扫描），改后重启
     skillsDir: "D:\\my-conventions"          # 你的约定目录（里面放 INDEX.md + VERSION）
     # bellExtra: "额外的提醒文本"              # 直接追加一行文本
     # bellExtraFile: "D:\\my-conventions\\BELL.txt"  # 或指向文件（每次注入现读，改文件不用重启）

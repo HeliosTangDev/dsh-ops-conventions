@@ -170,6 +170,13 @@ test("可选维护报告：配置 maintReport 才注入 Issues 摘要", async ()
   assert.ok(JSON.stringify(r.messages).includes("维护报告"));
 });
 
+test("总开关：enabled=false 时不注册任何钩子（插件加载但零行为）", async () => {
+  const { handlers, dir } = await loadPlugin({ enabled: false });
+  assert.equal(handlers.size, 0);
+  const logText = readFileSync(join(dir, "log.txt"), "utf8");
+  assert.ok(logText.includes("disabled by config"));
+});
+
 test("回复核对门：上一轮违规拒写，合规后解除，连续两轮自动放行", async () => {
   const replyChecks = [
     { id: "status-needs-time", pattern: "bell=v\\d+", require: "@\\d{1,2}:\\d{2}", message: "报状态要带采样时间" },

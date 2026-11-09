@@ -251,6 +251,12 @@ export function apply(ctx, config = {}) {
     }
   }
 
+  // 总开关：enabled=false 时保持加载但不注册任何钩子（零注入、零拦截、零扫描）
+  if (config.enabled === false) {
+    log("plugin disabled by config.enabled=false (no hooks registered)");
+    return;
+  }
+
   try {
     ctx.logger?.info?.("[ops-conventions] loaded");
   } catch {

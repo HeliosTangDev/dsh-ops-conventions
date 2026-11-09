@@ -1,3 +1,11 @@
+## 0.9.6（2026-11-08）
+
+### 总开关 enabled
+
+- 配置 `enabled: false` 时 `apply()` 记一行 `plugin disabled by config.enabled=false (no hooks registered)` 后直接返回：插件保持加载，但零注入、零拦截、零扫描、不注册 `ops_status`。
+- 默认 `true`（不配等于开）。改开关需重启（配置在启动时读）。
+- 测试先行：先写 `enabled:false` 应注册 0 个钩子（RED：实际 4 个），再实现（GREEN）。
+
 ## 0.9.5（2026-11-08）
 
 ### 捕获选择逻辑按 TDD 重做（先红后绿）
