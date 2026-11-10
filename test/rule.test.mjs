@@ -35,6 +35,7 @@ import {
   habitCandidate,
   compactionWarnText,
   staleClaimVersions,
+  isWriteOrExecTool,
   checkReplyTime,
   pickAssistantText,
   isSummaryLike,
@@ -452,4 +453,18 @@ test("denyReason marks the specific gate", () => {
   assert.ok(r1.includes("gate=index"), r1);
   const r2 = denyReason("D:\\x\\INDEX.md", 92, "D:\\todo.json", "todo_check.ps1", { indexRead: true, todoChecked: false });
   assert.ok(r2.includes("gate=todo"), r2);
+});
+// ---- isWriteOrExecTool：刷新判定（写/执行记脏，只读不算） ----
+test("isWriteOrExecTool: write tools and memories count", () => {
+  for (const n of ["write", "edit", "multi_edit", "apply_patch", "notebook_edit", "mcp__openviking__write", "mcp__openviking__edit"]) {
+    assert.equal(isWriteOrExecTool(n), true, n);
+  }
+});
+test("isWriteOrExecTool: exec tools count", () => {
+  for (const n of ["pwsh", "bash", "cmd", "run_command", "exec"]) assert.equal(isWriteOrExecTool(n), true, n);
+});
+test("isWriteOrExecTool: read-only tools do not count", () => {
+  for (const n of ["read", "grep", "glob", "web_search", "web_fetch", "mcp__openviking__find", "mcp__openviking__read", "todo_check", "job_output"]) {
+    assert.equal(isWriteOrExecTool(n), false, n);
+  }
 });

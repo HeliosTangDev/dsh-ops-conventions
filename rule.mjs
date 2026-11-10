@@ -926,3 +926,12 @@ export function compactionWarnText(stats, thresholdPct) {
   if (pct < th) return "";
   return `[上下文提醒] 已用 ${pct}%（阈值 ${th}%）。先收尾/分步处理，别再把大段输出堆进上下文；必要时开新会话接主线卡。`;
 }
+/** 刷新判据（2026-11-11）：写类或执行类工具 -> true；纯只读 -> false。 */
+const WRITE_TOOLS = new Set(["write", "edit", "multi_edit", "apply_patch", "notebook_edit"]);
+const EXEC_TOOLS = new Set(["pwsh", "bash", "cmd", "run_command", "exec"]);
+export function isWriteOrExecTool(name) {
+  const n = String(name ?? "").toLowerCase();
+  if (!n) return false;
+  if (WRITE_TOOLS.has(n) || EXEC_TOOLS.has(n)) return true;
+  return /^mcp__openviking__(write|edit|add_|forget)/.test(n);
+}

@@ -1,4 +1,5 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -19,6 +20,7 @@ import {
   structCheckIds,
   structGatesFor,
   isWriteTool,
+  isWriteOrExecTool,
   needsGuard,
   normalizeSessionId,
   projectionFileCandidates,
@@ -256,6 +258,35 @@ export function apply(ctx, config = {}) {
     }
   }
 
+  // 常驻检查刷新（2026-11-11）：每轮开始跑一次 -Turbo（<1s）；写/执行后 10 秒 debounce 加速。
+  const checksRunner = typeof config.checksRunner === "string" ? config.checksRunner : "D:\\software\\ToolsUse\\_tools\\checks\\run.ps1";
+  const checksState = typeof config.checksState === "string" ? config.checksState : "D:\\software\\ToolsUse\\_tools\\checks\\last-fast.json";
+  let checksDirty = false;
+  let checksTimer = null;
+  let lastChecksRun = 0;
+  function runChecksFast(reason) {
+    try {
+      checksDirty = false;
+      if (checksTimer) { clearTimeout(checksTimer); checksTimer = null; }
+      const r = spawnSync("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", checksRunner, "-Turbo"], { encoding: "utf8", timeout: 8000 });
+      const out = String(r.stdout || "") + String(r.stderr || "");
+      const m = out.match(/summary:\s*pass=(\d+)\s+fail=(\d+)/);
+      const row = { ts: new Date().toISOString(), pass: m ? Number(m[1]) : -1, fail: m ? Number(m[2]) : -1, reason };
+      mkdirSync(dirname(checksState), { recursive: true });
+      writeFileSync(checksState, JSON.stringify(row), "utf8");
+      lastChecksRun = Date.now();
+      log(`checks refresh ${reason}: pass=${row.pass} fail=${row.fail}`);
+    } catch (e) {
+      lastChecksRun = Date.now();
+      log(`checks refresh error: ${e?.message ?? String(e)}`);
+    }
+  }
+  function markChecksDirty(tool) {
+    checksDirty = true;
+    if (checksTimer) clearTimeout(checksTimer);
+    checksTimer = setTimeout(() => runChecksFast("debounce:" + String(tool || "")), 10000);
+    if (checksTimer.unref) checksTimer.unref();
+  }
   // 习惯收件箱（2026-11-11）：用户消息含纠正/追问信号时，自动落一条待处理记录。
   // 触发点：session/event 的 user/message（日志已实证存在）；处理点：收尾 habit_inbox.ps1 -Check。
   const habitInbox = join(dirname(logFile), "habit_inbox.jsonl");
@@ -350,6 +381,12 @@ export function apply(ctx, config = {}) {
       }
       const txt = pickText(d) || pickText(event);
       captureHabit(sid0, role, type, txt);
+      if (type === "tool/result") {
+        const tool = String(d.tool ?? d.name ?? d.toolName ?? d.call?.tool ?? d.toolName ?? "");
+        if (!tool || isWriteOrExecTool(tool)) markChecksDirty(tool || "unknown");
+      } else if (type === "turn/end") {
+        if (checksDirty) runChecksFast("turn-end");
+      }
       if (type === "turn/start") {
         const done = String(lastAsstBySid.get(sid0) || "");
         if (done.trim()) {
@@ -425,6 +462,10 @@ export function apply(ctx, config = {}) {
 
         // 现场状态：每会话注入一次，数字直接读文件（仅在配置 status: true 时启用）
         try {
+          // 每轮开始刷新一次（10 秒内已跑过则复用），保证状态最多滞后一轮。
+          try {
+            if (statusEnabled && Date.now() - lastChecksRun > 10000) runChecksFast("turn");
+          } catch {}
           if (statusEnabled && !(sess ? sess[STATUS_SENT] : globalStatusSent)) {
             if (sess) sess[STATUS_SENT] = true; else globalStatusSent = true;
             const st = liveStatusText({
@@ -435,13 +476,24 @@ export function apply(ctx, config = {}) {
               hostVersionFile,
               asarCandidates,
             });
-            if (st) {
+            let st2 = st;
+            try {
+              if (st && existsSync(checksState)) {
+                const c = JSON.parse(readFileSync(checksState, "utf8"));
+                const d2 = new Date(c.ts);
+                const hh = String(d2.getHours()).padStart(2, "0");
+                const mm = String(d2.getMinutes()).padStart(2, "0");
+                const age = (Date.now() - d2.getTime()) / 60000;
+                if (Number(c.pass) >= 0) st2 = st + ` | checks=${c.pass}/${Number(c.pass) + Number(c.fail)} @${hh}:${mm}` + (age > 5 ? "(old)" : "");
+              }
+            } catch {}
+            if (st2) {
               if (st.includes("host=?")) log("status host unresolved (asar read failed in all candidates)");
               log(`inject status chars=${st.length}`);
               messages = [
                 ...messages,
                 createUserMessage({
-                  content: [{ type: "text", text: st }],
+                  content: [{ type: "text", text: st2 }],
                   source: { kind: "plugin:dsh-ops-conventions", plugin: "dsh-ops-conventions", form: "instructions" },
                 }),
               ];
