@@ -541,6 +541,20 @@ export function liveStatusText(opts = {}) {
  * @param {{bellVersion?: string, host?: string, installed?: Set<string>}} live
  * @returns {string[]} 不一致的版本 token
  */
+/** 纠正/追问信号：用户消息里出现这些词，视为“可能含可复用思考模式”，写进习惯收件箱待处理 */
+export const CORRECTIVE_MARKERS = [
+  "为什么", "为啥", "不对", "错了", "漏了", "怎么没", "怎么又",
+  "之前", "应该", "还是没", "又回", "别再", "你确定", "保证",
+  "没落", "没写", "没跑", "没做", "又忘",
+];
+
+export function correctiveSignal(text) {
+  const t = String(text ?? "").trim();
+  if (t.length < 8) return "";
+  for (const m of CORRECTIVE_MARKERS) if (t.includes(m)) return m;
+  return "";
+}
+
 export function staleClaimVersions(text, live = {}) {
   const claim = /当前|现在|目前|已装|已升到|用的是|最新/;
   const sem = /\b\d+\.\d+\.\d+(?:-[A-Za-z0-9.]+)?\b/g;
@@ -864,4 +878,18 @@ export function signalHintText(summary, opts = {}) {
     `[事件信号] ${when}有 ${parts.join("、")}${where}；` +
     `若其中有值得改进的方向，按本机约定处理（大的直接改，小的按规则记录）。`
   );
+}
+
+/** 习惯收件箱触发判据：仅用户消息 + 纠正/追问信号 + 足够长度 → 返回摘录，否则 "" */
+export function habitCandidate(role, type, text) {
+  const r = String(role ?? "").toLowerCase();
+  const t = String(type ?? "").toLowerCase();
+  if (r.includes("assistant") || r.includes("agent") || r.includes("model")) return "";
+  const isUser = r.includes("user") || t.includes("user/message");
+  if (!isUser) return "";
+  const body = String(text ?? "").trim();
+  if (body.length < 8) return "";
+  const marker = correctiveSignal(body);
+  if (!marker) return "";
+  return body.slice(0, 200);
 }

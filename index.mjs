@@ -25,6 +25,8 @@ import {
   pickAssistantText,
   isSummaryLike,
   betterAssistantText,
+  habitCandidate,
+  correctiveSignal,
   maintHintText,
   signalSummary,
   signalHintText,
@@ -251,6 +253,33 @@ export function apply(ctx, config = {}) {
     }
   }
 
+  // 习惯收件箱（2026-11-11）：用户消息含纠正/追问信号时，自动落一条待处理记录。
+  // 触发点：session/event 的 user/message（日志已实证存在）；处理点：收尾 habit_inbox.ps1 -Check。
+  const habitInbox = join(dirname(logFile), "habit_inbox.jsonl");
+  const habitSeen = new Map();
+  function captureHabit(sid, role, type, text) {
+    try {
+      const cand = habitCandidate(role, type, text);
+      if (!cand) return;
+      const last = habitSeen.get(sid);
+      if (last === cand) return;
+      habitSeen.set(sid, cand);
+      mkdirSync(dirname(habitInbox), { recursive: true });
+      const row = {
+        ts: new Date().toISOString(),
+        session: String(sid || ""),
+        role: String(role || ""),
+        type: String(type || ""),
+        marker: correctiveSignal(cand),
+        text: cand,
+      };
+      appendFileSync(habitInbox, JSON.stringify(row) + "\n", "utf8");
+      log(`habit inbox: marker=${row.marker} session=${row.session} head=${JSON.stringify(cand.slice(0, 40))}`);
+    } catch (e) {
+      log(`habit inbox error: ${e?.message ?? String(e)}`);
+    }
+  }
+
   // 总开关：enabled=false 时保持加载但不注册任何钩子（零注入、零拦截、零扫描）
   if (config.enabled === false) {
     log("plugin disabled by config.enabled=false (no hooks registered)");
@@ -296,6 +325,7 @@ export function apply(ctx, config = {}) {
         log(`session event: type=${type} role=${role} sid=${sid0} dataKeys=${Object.keys(d).join(",")}`);
       }
       const txt = pickText(d) || pickText(event);
+      captureHabit(sid0, role, type, txt);
       if (type === "turn/start") {
         const done = String(lastAsstBySid.get(sid0) || "");
         if (done.trim()) {

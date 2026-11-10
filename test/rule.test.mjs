@@ -31,6 +31,8 @@ import {
   structGatesFor,
   statusSummary,
   checkReply,
+  correctiveSignal,
+  habitCandidate,
   checkReplyTime,
   pickAssistantText,
   isSummaryLike,
@@ -376,4 +378,34 @@ test("statusSummary: repo refs decide pushed/not-pushed, marker is reported", ()
   const s2 = statusSummary({ repoDir: dir });
   assert.equal(s2.repo.pushed, false, "different remote sha means not pushed");
   rmSync(dir, { recursive: true, force: true });
+});
+
+// ---- correctiveSignal：纠正/追问信号（2026-11-11，思考习惯捕获的触发判据） ----
+test("correctiveSignal flags a corrective follow-up", () => {
+  assert.ok(correctiveSignal("可是又回到那个问题，我不提这个你有做保证触发的机制吗"));
+});
+
+test("correctiveSignal ignores short neutral answers", () => {
+  assert.equal(correctiveSignal("好的"), "");
+  assert.equal(correctiveSignal("继续"), "");
+  assert.equal(correctiveSignal(""), "");
+});
+
+test("correctiveSignal returns the matched marker", () => {
+  const hit = correctiveSignal("为什么这次又没写现场时间？");
+  assert.ok(hit.length > 0, "should return a non-empty marker");
+});
+// ---- habitCandidate：用户消息→习惯收件箱的触发判据（2026-11-11） ----
+test("habitCandidate captures a user corrective message", () => {
+  const hit = habitCandidate("user", "user/message", "为什么这次又没写现场时间？");
+  assert.ok(hit && hit.length > 0);
+});
+
+test("habitCandidate ignores assistant messages", () => {
+  assert.equal(habitCandidate("assistant", "user/message", "为什么这次又没写现场时间？"), "");
+});
+
+test("habitCandidate ignores short/neutral user text", () => {
+  assert.equal(habitCandidate("user", "user/message", "好"), "");
+  assert.equal(habitCandidate("user", "user/message", ""), "");
 });
