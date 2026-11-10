@@ -33,3 +33,13 @@ test("sim: actual session event shape (data.role + content text)", () => {
   assert.ok(row);
   assert.equal(row.marker, "为什么");
 });
+
+test("sim: injected bell text is not a user habit signal", () => {
+  const bell = "「操作约定 v92」动手前必须 read D:\\software\\ToolsDev\\ops-skills\\INDEX.md 并执行对应清单";
+  assert.equal(habitRow(SID, "user", "user/message", "[操作约定 v92] 动手前必须 read D:\\software\\ToolsDev\\ops-skills\\INDEX.md 并执行对应清单"), null);
+});
+
+test("sim: injected memory context is not a user habit signal", () => {
+  const ctx = "<openviking-context>\nRelevant memory from OpenViking. 之前说过的内容";
+  assert.equal(habitRow(SID, "user", "user/message", ctx), null);
+});
