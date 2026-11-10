@@ -26,6 +26,7 @@ import {
   isSummaryLike,
   betterAssistantText,
   habitCandidate,
+  habitRow,
   correctiveSignal,
   maintHintText,
   signalSummary,
@@ -259,12 +260,15 @@ export function apply(ctx, config = {}) {
   const habitSeen = new Map();
   function captureHabit(sid, role, type, text) {
     try {
+      const userish = /user/i.test(String(role || "")) || /user\/message/i.test(String(type || ""));
+      if (userish) {
+        log(`habit see: role=${role} type=${type} len=${String(text || "").length} marker=${correctiveSignal(text)}`);
+      }
       const cand = habitCandidate(role, type, text);
       if (!cand) return;
       const last = habitSeen.get(sid);
       if (last === cand) return;
       habitSeen.set(sid, cand);
-      mkdirSync(dirname(habitInbox), { recursive: true });
       const row = {
         ts: new Date().toISOString(),
         session: String(sid || ""),
@@ -273,10 +277,28 @@ export function apply(ctx, config = {}) {
         marker: correctiveSignal(cand),
         text: cand,
       };
+      mkdirSync(dirname(habitInbox), { recursive: true });
       appendFileSync(habitInbox, JSON.stringify(row) + "\n", "utf8");
       log(`habit inbox: marker=${row.marker} session=${row.session} head=${JSON.stringify(cand.slice(0, 40))}`);
     } catch (e) {
       log(`habit inbox error: ${e?.message ?? String(e)}`);
+    }
+  }
+
+  // 加载自检（2026-11-11）：不依赖用户发消息，起进程就能证明“判据→落行”链路是否通。
+  const habitSelftestFile = join(dirname(logFile), "habit_selftest.jsonl");
+  if (config.habitSelfTest !== false) {
+    try {
+      const row = habitRow("selftest", "user", "user/message", "为什么自检触发？");
+      if (!row) {
+        log("habit selftest: fail (no row)");
+      } else {
+        mkdirSync(dirname(habitSelftestFile), { recursive: true });
+        appendFileSync(habitSelftestFile, JSON.stringify(row) + "\n", "utf8");
+        log(`habit selftest: ok marker=${row.marker} file=${habitSelftestFile}`);
+      }
+    } catch (e) {
+      log(`habit selftest: error ${e?.message ?? String(e)}`);
     }
   }
 
