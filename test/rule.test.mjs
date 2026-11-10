@@ -34,6 +34,7 @@ import {
   correctiveSignal,
   habitCandidate,
   compactionWarnText,
+  staleClaimVersions,
   checkReplyTime,
   pickAssistantText,
   isSummaryLike,
@@ -433,4 +434,22 @@ test("compactionWarnText stays silent below threshold / unknown percent", () => 
   assert.equal(compactionWarnText({ percent: 32 }, 60), "");
   assert.equal(compactionWarnText({ percent: null }, 60), "");
   assert.equal(compactionWarnText({ percent: 90 }, 0), "");
+});
+// ---- 小改动批 2026-11-11：版本误报过滤 + 拒绝原因标具体门 ----
+test("staleClaimVersions ignores plugin versions and requirement ranges", () => {
+  const live = { host: "0.2.2-rc.1", bellVersion: 92, installed: new Set() };
+  const text = "当前配置：插件 dsh-live-compact 1.0.2 要求 DSH >=0.2.0-rc.2 <0.3.0";
+  assert.deepEqual(staleClaimVersions(text, live), []);
+});
+
+test("staleClaimVersions still flags a mismatched host version", () => {
+  const live = { host: "0.2.2-rc.1", bellVersion: 92, installed: new Set() };
+  assert.ok(staleClaimVersions("当前 host 0.2.1-rc.3", live).includes("0.2.1-rc.3"));
+});
+
+test("denyReason marks the specific gate", () => {
+  const r1 = denyReason("D:\\x\\INDEX.md", 92, "D:\\todo.json", "todo_check.ps1", { indexRead: false, todoChecked: true });
+  assert.ok(r1.includes("gate=index"), r1);
+  const r2 = denyReason("D:\\x\\INDEX.md", 92, "D:\\todo.json", "todo_check.ps1", { indexRead: true, todoChecked: false });
+  assert.ok(r2.includes("gate=todo"), r2);
 });

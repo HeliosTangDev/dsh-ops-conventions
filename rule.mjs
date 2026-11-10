@@ -371,8 +371,9 @@ export function denyReason(indexPath, version, todoPath, todoCheckCmd, flags = {
     );
   }
   if (parts.length === 0) parts.push(`read 约定索引 ${indexPath}`);
+  const gate = !flags.indexRead ? "index" : "todo";
   return (
-    `[操作约定${v}｜硬拦截] 本会话还没 ` + parts.join("，也没 ") + "。做完后" +
+    `[操作约定${v}｜硬拦截 gate=${gate}] 本会话还没 ` + parts.join("，也没 ") + "。做完后" +
     "执行对应清单（ops-scripts/notes/files/check/longtask/dsh），再重试本次写操作；跳过=未完成。"
   );
 }
@@ -568,7 +569,13 @@ export function staleClaimVersions(text, live = {}) {
     if (!claim.test(line)) continue;
     for (const m of line.matchAll(sem)) {
       const v = m[0];
-      if (!installed.has(v) && v !== live.host) out.push(v);
+      if (installed.has(v) || v === live.host) continue;
+      // 2026-11-11: 插件自身版本与“要求/范围”表达式不是本机现状，别当误报。
+      const before = line.slice(Math.max(0, m.index - 30), m.index);
+      if (/(插件|plugin)/i.test(before)) continue;
+      if (/(要求|需要|engines|peer|版本|>=|<=|>|<|~|\^)\s*[:：]?\s*$/i.test(before)) continue;
+      if (/^(\s*(>=|<=|>|<|~|\^))/.test(line.slice(m.index + v.length))) continue;
+      out.push(v);
     }
     for (const m of line.matchAll(vv)) {
       const n = m[1];
