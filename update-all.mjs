@@ -1,15 +1,14 @@
 #!/usr/bin/env node
-// update-all.mjs - install dsh-ops-conventions into EVERY local DSH profile
-// Scans multiple DSH homes (production + test) and installs into each profile dir.
+// update-all.mjs - install dsh-ops-conventions into local DSH profiles
+// Default: production home only (~/.dsh -> desktop, web). The test home is the
+// emergency/rollback instance and is NOT updated unless --include-test is given.
 //
-//   node update-all.mjs            # install into every discovered profile
-//   node update-all.mjs check      # only print version per profile
-//   node update-all.mjs --pull     # git pull --ff-only first, then install
-//   node update-all.mjs --no-lock  # skip refreshing each profile's pnpm lock
+//   node update-all.mjs                 # install into ~/.dsh profiles (desktop, web)
+//   node update-all.mjs check           # only print version per profile
+//   node update-all.mjs --include-test  # ALSO install into D:\software\DSH-test\home
+//   node update-all.mjs --pull          # git pull --ff-only first, then install
+//   node update-all.mjs --no-lock       # skip refreshing each profile's pnpm lock
 //
-// Default DSH homes:
-//   %USERPROFILE%\.dsh                -> desktop, web
-//   D:\software\DSH-test\home         -> web (test environment)
 // Override with:  set DSH_UPDATE_HOMES=C:\path\a;D:\path\b
 //
 // install.mjs copies THIS local repo into <profile>/node_modules, so the repo
@@ -25,8 +24,12 @@ const args = process.argv.slice(2);
 const checkOnly = args.includes("check");
 const pull = args.includes("--pull");
 const noLock = args.includes("--no-lock");
+// 2026-11-10: 测试端是救急用的，默认不同步；需要时显式 --include-test
+const includeTest = args.includes("--include-test");
 
-const DEFAULT_HOMES = [join(homedir(), ".dsh"), "D:\\software\\DSH-test\\home"];
+const PROD_HOMES = [join(homedir(), ".dsh")];
+const TEST_HOMES = [process.env.DSH_TEST_HOME || "D:\\software\\DSH-test\\home"];
+const DEFAULT_HOMES = includeTest ? [...PROD_HOMES, ...TEST_HOMES] : PROD_HOMES;
 const homes = process.env.DSH_UPDATE_HOMES
   ? process.env.DSH_UPDATE_HOMES.split(";").map((s) => s.trim()).filter(Boolean)
   : DEFAULT_HOMES;
