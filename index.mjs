@@ -265,16 +265,22 @@ export function apply(ctx, config = {}) {
   let checksTimer = null;
   let lastChecksRun = 0;
   // 异步刷新：起 run_turbo.ps1 后立即返回，不阻塞轮次；状态行读它写的 JSON。
+  // 2026-11-10 修复：宿主（打包应用）的 PATH 可能不含 WindowsPowerShell 目录，
+  // 只写 "powershell.exe" 会异步 ENOENT，而旧代码没有 error 监听 → 刷新永远不落盘且日志只留 scheduled。
+  const checksShell = process.env.SystemRoot
+    ? join(process.env.SystemRoot, "System32", "WindowsPowerShell", "v1.0", "powershell.exe")
+    : "powershell.exe";
   function runChecksFast(reason) {
+    checksDirty = false;
+    if (checksTimer) { clearTimeout(checksTimer); checksTimer = null; }
+    lastChecksRun = Date.now();
     try {
-      checksDirty = false;
-      if (checksTimer) { clearTimeout(checksTimer); checksTimer = null; }
-      const child = spawn("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", checksRunner], { detached: true, stdio: "ignore" });
+      const child = spawn(checksShell, ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", checksRunner], { detached: true, stdio: "ignore" });
+      child.on("error", (e) => log(`checks refresh error: ${e?.message ?? String(e)} shell=${checksShell} runner=${checksRunner}`));
+      child.on("exit", (code, sig) => log(`checks refresh exit: code=${code} sig=${sig ?? ""} runner=${checksRunner}`));
       if (child.unref) child.unref();
-      lastChecksRun = Date.now();
       log(`checks refresh scheduled: ${reason}`);
     } catch (e) {
-      lastChecksRun = Date.now();
       log(`checks refresh error: ${e?.message ?? String(e)}`);
     }
   }

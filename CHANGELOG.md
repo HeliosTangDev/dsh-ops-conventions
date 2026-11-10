@@ -6,6 +6,12 @@
 - 默认 `true`（不配等于开）。改开关需重启（配置在启动时读）。
 - 测试先行：先写 `enabled:false` 应注册 0 个钩子（RED：实际 4 个），再实现（GREEN）。
 
+### 常驻检查刷新修复（2026-11-10）
+
+- 背景：会话内自动刷新只记 `checks refresh scheduled`，`last-fast.json` 永不更新；250ms 密轮询 45 秒未见子进程（日志 14:38Z）。
+- 修：`spawn` 改用绝对路径 `%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe`（宿主 PATH 可能不含该目录，原先异步 ENOENT 无人接管），并补 `error` / `exit` 监听，失败原因写进插件日志。
+- 验证：`node --check` 通过，rule 38/38、guard 8/8；装入 desktop/web 后待重载确认日志出现 `checks refresh exit`。
+
 ## 0.9.5（2026-11-08）
 
 ### 捕获选择逻辑按 TDD 重做（先红后绿）
