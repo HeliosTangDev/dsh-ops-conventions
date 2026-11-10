@@ -1,5 +1,5 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
-import { spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -259,23 +259,20 @@ export function apply(ctx, config = {}) {
   }
 
   // 常驻检查刷新（2026-11-11）：每轮开始跑一次 -Turbo（<1s）；写/执行后 10 秒 debounce 加速。
-  const checksRunner = typeof config.checksRunner === "string" ? config.checksRunner : "D:\\software\\ToolsUse\\_tools\\checks\\run.ps1";
+  const checksRunner = typeof config.checksRunner === "string" ? config.checksRunner : "D:\\software\\ToolsUse\\_tools\\checks\\run_turbo.ps1";
   const checksState = typeof config.checksState === "string" ? config.checksState : "D:\\software\\ToolsUse\\_tools\\checks\\last-fast.json";
   let checksDirty = false;
   let checksTimer = null;
   let lastChecksRun = 0;
+  // 异步刷新：起 run_turbo.ps1 后立即返回，不阻塞轮次；状态行读它写的 JSON。
   function runChecksFast(reason) {
     try {
       checksDirty = false;
       if (checksTimer) { clearTimeout(checksTimer); checksTimer = null; }
-      const r = spawnSync("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", checksRunner, "-Turbo"], { encoding: "utf8", timeout: 8000 });
-      const out = String(r.stdout || "") + String(r.stderr || "");
-      const m = out.match(/summary:\s*pass=(\d+)\s+fail=(\d+)/);
-      const row = { ts: new Date().toISOString(), pass: m ? Number(m[1]) : -1, fail: m ? Number(m[2]) : -1, reason };
-      mkdirSync(dirname(checksState), { recursive: true });
-      writeFileSync(checksState, JSON.stringify(row), "utf8");
+      const child = spawn("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", checksRunner], { detached: true, stdio: "ignore" });
+      if (child.unref) child.unref();
       lastChecksRun = Date.now();
-      log(`checks refresh ${reason}: pass=${row.pass} fail=${row.fail}`);
+      log(`checks refresh scheduled: ${reason}`);
     } catch (e) {
       lastChecksRun = Date.now();
       log(`checks refresh error: ${e?.message ?? String(e)}`);
@@ -464,7 +461,7 @@ export function apply(ctx, config = {}) {
         try {
           // 每轮开始刷新一次（10 秒内已跑过则复用），保证状态最多滞后一轮。
           try {
-            if (statusEnabled && Date.now() - lastChecksRun > 10000) runChecksFast("turn");
+            if (statusEnabled && Date.now() - lastChecksRun > 5 * 60 * 1000) runChecksFast("turn");
           } catch {}
           if (statusEnabled && !(sess ? sess[STATUS_SENT] : globalStatusSent)) {
             if (sess) sess[STATUS_SENT] = true; else globalStatusSent = true;
