@@ -10,7 +10,8 @@
 
 - 背景：会话内自动刷新只记 `checks refresh scheduled`，`last-fast.json` 永不更新；250ms 密轮询 45 秒未见子进程（日志 14:38Z）。
 - 修：`spawn` 改用绝对路径 `%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe`（宿主 PATH 可能不含该目录，原先异步 ENOENT 无人接管），并补 `error` / `exit` 监听，失败原因写进插件日志。
-- 验证：`node --check` 通过，rule 38/38、guard 8/8；装入 desktop/web 后待重载确认日志出现 `checks refresh exit`。
+- 二次修（同日）：`detached: true` 的子进程在本机宿主里会被立刻回收（实测 350ms exit 0、脚本不执行）→ 改普通子进程；worker 里 `Start-Process` 在沙箱被拒（`Access is denied`）→ `run.ps1` 加 `-NoExit`、worker 进程内调用；状态文件默认改到会话 `%TEMP%\ops-checks-last.json`（子进程可写），worker 用 `-StateFile` 传入。
+- 验证：`node --check` 通过，rule 38/38、guard 8/8；worker 非 detached 实测 3.1s、写出 `pass=8 fail=2`。
 
 ## 0.9.5（2026-11-08）
 

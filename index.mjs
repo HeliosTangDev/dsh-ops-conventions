@@ -260,7 +260,9 @@ export function apply(ctx, config = {}) {
 
   // 常驻检查刷新（2026-11-11）：每轮开始跑一次 -Turbo（<1s）；写/执行后 10 秒 debounce 加速。
   const checksRunner = typeof config.checksRunner === "string" ? config.checksRunner : "D:\\software\\ToolsUse\\_tools\\checks\\run_turbo.ps1";
-  const checksState = typeof config.checksState === "string" ? config.checksState : "D:\\software\\ToolsUse\\_tools\\checks\\last-fast.json";
+  // 2026-11-10：状态文件默认放会话 %TEMP%（宿主与子进程共用同一 TEMP），避免子进程写工具区被沙箱拒绝；
+  // 需要回工具区可用 profile 配置 checksState 覆盖。
+  const checksState = typeof config.checksState === "string" ? config.checksState : join(process.env.TEMP || homedir(), "ops-checks-last.json");
   let checksDirty = false;
   let checksTimer = null;
   let lastChecksRun = 0;
@@ -275,7 +277,9 @@ export function apply(ctx, config = {}) {
     if (checksTimer) { clearTimeout(checksTimer); checksTimer = null; }
     lastChecksRun = Date.now();
     try {
-      const child = spawn(checksShell, ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", checksRunner], { detached: true, stdio: "ignore" });
+      // detached:true 的子进程在本机宿主环境里会被立刻回收（实测 350ms exit 0、脚本不执行），
+      // 改成普通子进程 + unref，让它跑完（约 3 秒）。
+      const child = spawn(checksShell, ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", checksRunner, "-StateFile", checksState], { stdio: "ignore" });
       child.on("error", (e) => log(`checks refresh error: ${e?.message ?? String(e)} shell=${checksShell} runner=${checksRunner}`));
       child.on("exit", (code, sig) => log(`checks refresh exit: code=${code} sig=${sig ?? ""} runner=${checksRunner}`));
       if (child.unref) child.unref();
