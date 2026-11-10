@@ -400,11 +400,14 @@ export function compactionStats(projection) {
   const timeline = rows.contextTimeline?.val ?? {};
   const events = Array.isArray(timeline.events) ? timeline.events : [];
   const comps = events.filter((e) => e && e.kind === "compaction");
+  const totals = timeline.totals ?? {};
+  const fromTotals = Number(totals.compactions);
+  const count = Number.isFinite(fromTotals) && fromTotals > 0 ? fromTotals : comps.length;
   const pressure = rows.contextPressure?.val ?? {};
   const window = timeline.contextWindow ?? pressure.contextWindow ?? null;
   const used = pressure.pressureTokens ?? null;
   return {
-    count: comps.length,
+    count: count,
     last: comps.length > 0 ? comps[comps.length - 1] : null,
     pressureTokens: used,
     contextWindow: window,
@@ -888,6 +891,8 @@ export function habitCandidate(role, type, text) {
   const isUser = r.includes("user") || t.includes("user/message");
   if (!isUser) return "";
   const body = String(text ?? "").trim();
+  // 注入内容也会以 user/message 出现（门铃、记忆上下文、技能目录），不算用户追问。
+  if (/^(\[操作约定|<openviking-context>|<available-skills>|Instructions from|Relevant memory from OpenViking)/.test(body)) return "";
   if (body.length < 8) return "";
   const marker = correctiveSignal(body);
   if (!marker) return "";
@@ -905,4 +910,12 @@ export function habitRow(sid, role, type, text, now = new Date().toISOString()) 
     marker: correctiveSignal(cand),
     text: cand,
   };
+}
+/** 上下文阈值预警：percent 达到 thresholdPct（>0）时返回提醒文本，否则 ""。 */
+export function compactionWarnText(stats, thresholdPct) {
+  const pct = Number(stats?.percent);
+  const th = Number(thresholdPct);
+  if (!Number.isFinite(pct) || !Number.isFinite(th) || th <= 0) return "";
+  if (pct < th) return "";
+  return `[上下文提醒] 已用 ${pct}%（阈值 ${th}%）。先收尾/分步处理，别再把大段输出堆进上下文；必要时开新会话接主线卡。`;
 }

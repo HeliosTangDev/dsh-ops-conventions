@@ -33,6 +33,7 @@ import {
   checkReply,
   correctiveSignal,
   habitCandidate,
+  compactionWarnText,
   checkReplyTime,
   pickAssistantText,
   isSummaryLike,
@@ -408,4 +409,28 @@ test("habitCandidate ignores assistant messages", () => {
 test("habitCandidate ignores short/neutral user text", () => {
   assert.equal(habitCandidate("user", "user/message", "好"), "");
   assert.equal(habitCandidate("user", "user/message", ""), "");
+});
+// ---- compactionStats：真实投影用 totals.compactions 记次数（2026-11-11 修） ----
+test("compactionStats counts totals.compactions when timeline events are empty", () => {
+  const proj = { record: { rows: { contextTimeline: { val: { totals: { compactions: 3 }, events: [], contextWindow: 1048576 } }, contextPressure: { val: { pressureTokens: 328170 } } } } };
+  const s = compactionStats(proj);
+  assert.equal(s.count, 3);
+  assert.equal(s.percent, 31);
+});
+
+test("compactionStats falls back to event count when totals missing", () => {
+  const proj = { record: { rows: { contextTimeline: { val: { events: [{ kind: "compaction" }, { kind: "compaction" }] } } } } };
+  assert.equal(compactionStats(proj).count, 2);
+});
+// ---- compactionWarnText：上下文阈值预警（2026-11-11 A 案） ----
+test("compactionWarnText fires at or above threshold", () => {
+  const txt = compactionWarnText({ percent: 61 }, 60);
+  assert.ok(txt.includes("61%"));
+  assert.ok(txt.includes("60%"));
+});
+
+test("compactionWarnText stays silent below threshold / unknown percent", () => {
+  assert.equal(compactionWarnText({ percent: 32 }, 60), "");
+  assert.equal(compactionWarnText({ percent: null }, 60), "");
+  assert.equal(compactionWarnText({ percent: 90 }, 0), "");
 });

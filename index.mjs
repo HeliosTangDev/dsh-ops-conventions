@@ -6,6 +6,7 @@ import { createUserMessage } from "@deepseek-ai/dsh-llm";
 import {
   DEFAULT_BLOCKED_TOOLS,
   compactionHintText,
+  compactionWarnText,
   compactionStats,
   denyReason,
   isBlockedTool,
@@ -152,6 +153,7 @@ export function apply(ctx, config = {}) {
     config.replyTimeCheck && typeof config.replyTimeCheck === "object" ? config.replyTimeCheck : null;
   const delivered = new Map(); // sessionId -> version（兜底）
   const compactionSeen = new Map(); // sessionId -> 已提示过的压缩次数（无 session 对象时兜底）
+  const compactWarnSeen = new Map(); // sessionId -> 是否已发过阈值预警
   const projectionCache = new Map(); // path -> { mtimeMs, size, stats }
   const projectionDir =
     config.sessionCacheDir ??
@@ -376,6 +378,7 @@ export function apply(ctx, config = {}) {
     }
   });
   const COMPACT_SEEN = Symbol.for("dsh.opsConventions.compactionSeen");
+  const COMPACT_WARN_SEEN = Symbol.for("dsh.opsConventions.compactWarnSeen");
   const MAINT_SEEN = Symbol.for("dsh.opsConventions.maintSeen");
   const STATUS_SENT = Symbol.for("dsh.opsConventions.statusSent");
 
@@ -537,6 +540,26 @@ export function apply(ctx, config = {}) {
           }
         }
 
+        // 阈值预警（2026-11-11 A 案）：达到 compactWarnPct 时每会话提醒一次，不等压缩发生。
+        const compactWarnPct = Number(config.compactWarnPct ?? 0);
+        if (stats && compactWarnPct > 0) {
+          const warned = sess ? sess[COMPACT_WARN_SEEN] : compactWarnSeen.get(sid);
+          if (!warned) {
+            const warnText = compactionWarnText(stats, compactWarnPct);
+            if (warnText) {
+              if (sess) sess[COMPACT_WARN_SEEN] = true;
+              else compactWarnSeen.set(sid, true);
+              log(`compaction warn session=${sid} percent=${stats.percent} threshold=${compactWarnPct}`);
+              messages = [
+                ...messages,
+                createUserMessage({
+                  content: [{ type: "text", text: warnText }],
+                  source: { kind: "plugin:dsh-ops-conventions", plugin: "dsh-ops-conventions", form: "instructions" },
+                }),
+              ];
+            }
+          }
+        }
         // 版本引用核对 + 回复合规扫描：都在下一轮 pre-step 里检查上一条回复
         //   - versionWarning: 现状句写了非现场版本 → 警告
         //   - replyChecks:   个人配置的回复规则（两段式/禁词等）→ 警告
