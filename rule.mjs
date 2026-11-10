@@ -893,3 +893,16 @@ export function habitCandidate(role, type, text) {
   if (!marker) return "";
   return body.slice(0, 200);
 }
+/** 把一次 session/event 转成收件行（纯函数，便于离线模拟；不写磁盘） */
+export function habitRow(sid, role, type, text, now = new Date().toISOString()) {
+  const cand = habitCandidate(role, type, text);
+  if (!cand) return null;
+  return {
+    ts: now,
+    session: String(sid || ""),
+    role: String(role || ""),
+    type: String(type || ""),
+    marker: correctiveSignal(cand),
+    text: cand,
+  };
+}
