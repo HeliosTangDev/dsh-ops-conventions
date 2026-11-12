@@ -1,3 +1,11 @@
+## 未发布（2026-11-13）
+
+### 读 JSON 容忍 UTF-8 BOM
+
+- `rule.mjs` 新增 `readJsonFile()`（`JSON.parse` 前剥掉 `^\uFEFF`），替换 4 处 `JSON.parse(readFileSync(...))`：`bell_state.json`、待办 `todo.json`、插件 `package.json`、状态汇总里的待办读取；`index.mjs` 同步替换 3 处（投影缓存、`ops-checks-last.json`、profile `package.json`）。
+- 起因：`D:\software\ToolsUse\_tools\todo\todo.json` 被 PowerShell 的 `Set-Content -Encoding utf8` 写成 UTF-8 BOM（首字节 `EF BB BF`），插件状态行显示 `todo items=parse-error`，而 `todo_check.ps1` 用 PowerShell 读所以正常，出现两处口径不一致。该文件已去 BOM；本改动负责读方容错，类似文件再被写坏时不再表现为 parse-error。
+- 测试 +2：BOM 开头的 JSON 可解析；带 BOM 的 `todo.json` 下 `statusSummary`/`liveStatusText` 不再出现 `parse-error`。
+
 ## 0.9.6（2026-11-08）
 
 ### 总开关 enabled

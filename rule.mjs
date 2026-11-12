@@ -4,6 +4,11 @@ import { join, dirname } from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 
+/** 读 JSON 并容忍 UTF-8 BOM（PowerShell 5.1 的 Set-Content -Encoding utf8 会写 BOM，JSON.parse 不容它）。 */
+export function readJsonFile(file) {
+  return JSON.parse(readFileSync(file, "utf8").replace(/^\uFEFF/, ""));
+}
+
 // ---- 路径解析（可配置；发行版无硬编码路径） ----
 /** 所有候选目录（排错用，也会按顺序做存在性检查） */
 export function skillsDirCandidates(config = {}) {
@@ -442,7 +447,7 @@ export function bellIntegrity(ruleFile, stateFile) {
   try {
     const sha = createHash("sha256").update(readFileSync(ruleFile)).digest("hex").toUpperCase();
     if (!existsSync(stateFile)) return { ok: true, reason: "no-state" };
-    const st = JSON.parse(readFileSync(stateFile, "utf8"));
+    const st = readJsonFile(stateFile);
     if (!st || !st.sha256) return { ok: true, reason: "bad-state" };
     return { ok: st.sha256 === sha, expected: st.sha256, actual: sha };
   } catch (e) {
@@ -525,7 +530,7 @@ export function liveStatusText(opts = {}) {
     const tf = opts.todoFile || "";
     if (tf && existsSync(tf)) {
       try {
-        const j = JSON.parse(readFileSync(tf, "utf8"));
+        const j = readJsonFile(tf);
         const items = Array.isArray(j.items) ? j.items : [];
         const ask = items.filter((x) => String(x.type) === "ask").length;
         todos = `${items.length} (ask ${ask}; run todo_check for verdict)`;
@@ -652,7 +657,7 @@ export function statusSummary(opts = {}) {
   }
   if (opts.packageFile) {
     try {
-      const p = JSON.parse(readFileSync(opts.packageFile, "utf8"));
+      const p = readJsonFile(opts.packageFile);
       out.plugin = { name: p.name, version: p.version };
     } catch {
       out.plugin = null;
@@ -660,7 +665,7 @@ export function statusSummary(opts = {}) {
   }
   if (opts.todoFile) {
     try {
-      const j = JSON.parse(readFileSync(opts.todoFile, "utf8"));
+      const j = readJsonFile(opts.todoFile);
       const items = Array.isArray(j.items) ? j.items : [];
       out.todo = {
         items: items.length,

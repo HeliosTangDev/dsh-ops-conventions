@@ -17,6 +17,7 @@ import {
   isShellWrite,
   isTodoCheck,
   isTodoRead,
+  readJsonFile,
   structCheckIds,
   structGatesFor,
   isWriteTool,
@@ -192,7 +193,7 @@ export function apply(ctx, config = {}) {
       const st = statSync(path);
       const cached = projectionCache.get(path);
       if (cached && cached.mtimeMs === st.mtimeMs && cached.size === st.size) return cached.stats;
-      const stats = compactionStats(JSON.parse(readFileSync(path, "utf8")));
+      const stats = compactionStats(readJsonFile(path));
       projectionCache.set(path, { mtimeMs: st.mtimeMs, size: st.size, stats });
       return stats;
     } catch (err) {
@@ -486,7 +487,7 @@ export function apply(ctx, config = {}) {
             let st2 = st;
             try {
               if (st && existsSync(checksState)) {
-                const c = JSON.parse(readFileSync(checksState, "utf8"));
+                const c = readJsonFile(checksState);
                 const d2 = new Date(c.ts);
                 const hh = String(d2.getHours()).padStart(2, "0");
                 const mm = String(d2.getMinutes()).padStart(2, "0");
@@ -652,7 +653,7 @@ export function apply(ctx, config = {}) {
             const installed = new Set();
             try {
               for (const prof of installedProfileDirs) {
-                const pj = JSON.parse(readFileSync(join(prof, "package.json"), "utf8"));
+                const pj = readJsonFile(join(prof, "package.json"));
                 for (const v of Object.values(pj.dependencies || {})) {
                   const m = String(v).match(/\d+\.\d+\.\d+(?:-[A-Za-z0-9.]+)?/);
                   if (m) installed.add(m[0]);

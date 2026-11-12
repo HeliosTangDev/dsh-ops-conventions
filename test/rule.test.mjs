@@ -24,6 +24,8 @@ import {
   needsGuard,
   normalizeSessionId,
   readVersion,
+  readJsonFile,
+  liveStatusText,
   reminderText,
   shouldInject,
   skillsDirCandidates,
@@ -467,4 +469,24 @@ test("isWriteOrExecTool: read-only tools do not count", () => {
   for (const n of ["read", "grep", "glob", "web_search", "web_fetch", "mcp__openviking__find", "mcp__openviking__read", "todo_check", "job_output"]) {
     assert.equal(isWriteOrExecTool(n), false, n);
   }
+});
+
+// ---- readJsonFile：容忍 UTF-8 BOM（2026-11-13 todo.json 被写 BOM 导致 parse-error） ----
+test("readJsonFile: strips UTF-8 BOM", () => {
+  const dir = mkdtempSync(join(tmpdir(), "bom-"));
+  const f = join(dir, "x.json");
+  writeFileSync(f, "\uFEFF{\"items\":[{\"type\":\"ask\"}]}", "utf8");
+  assert.deepEqual(readJsonFile(f), { items: [{ type: "ask" }] });
+  rmSync(dir, { recursive: true, force: true });
+});
+test("statusSummary/liveStatusText: BOM'd todo.json 不再变成 parse-error", () => {
+  const dir = mkdtempSync(join(tmpdir(), "bom-"));
+  const f = join(dir, "todo.json");
+  writeFileSync(f, "\uFEFF{\"updated\":\"2026-11-13\",\"items\":[{\"id\":\"a\",\"text\":\"t\",\"type\":\"ask\"}]}", "utf8");
+  const s = statusSummary({ todoFile: f });
+  assert.equal(s.todo && s.todo.items, 1);
+  const live = liveStatusText({ todoFile: f });
+  assert.ok(live.includes("todo items=1"), live);
+  assert.ok(!live.includes("parse-error"), live);
+  rmSync(dir, { recursive: true, force: true });
 });
