@@ -481,6 +481,7 @@ export function apply(ctx, config = {}) {
               versionFile,
               maintReport: maintReport || process.env.OPS_MAINT_REPORT || "",
               todoFile: statusTodoJson,
+              todoLastFile,
               hostVersionFile,
               asarCandidates,
             });

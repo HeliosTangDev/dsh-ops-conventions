@@ -1,7 +1,7 @@
 // 纯逻辑测试（通用版）：node test/rule.test.mjs
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, utimesSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -489,4 +489,29 @@ test("statusSummary/liveStatusText: BOM'd todo.json 不再变成 parse-error", (
   assert.ok(live.includes("todo items=1"), live);
   assert.ok(!live.includes("parse-error"), live);
   rmSync(dir, { recursive: true, force: true });
+});
+
+// ---- liveStatusText：待办判定 + 采样时间（2026-11-13，每轮 todo_check 刷新后由状态行展示） ----
+test("liveStatusText: fresh todo_last.txt shows verdict with time, not stale", () => {
+  const dir = mkdtempSync(join(tmpdir(), "tl-"));
+  const f = join(dir, "todo_last.txt");
+  writeFileSync(f, "ASK x\nsummary: open=0 done=0 ask=2 wait=0 err=0\nby owner: me=2\n", "utf8");
+  const t = liveStatusText({ todoLastFile: f });
+  assert.ok(/todo open=0 done=0 ask=2 wait=0 err=0 @\d{2}:\d{2}/.test(t), t);
+  assert.ok(!t.includes("stale"), t);
+  rmSync(dir, { recursive: true, force: true });
+});
+test("liveStatusText: todo_last.txt older than 10 min is marked stale", () => {
+  const dir = mkdtempSync(join(tmpdir(), "tl-"));
+  const f = join(dir, "todo_last.txt");
+  writeFileSync(f, "summary: open=1 done=0 ask=0 wait=0 err=0\n", "utf8");
+  const old = new Date(Date.now() - 60 * 60 * 1000);
+  utimesSync(f, old, old);
+  const t = liveStatusText({ todoLastFile: f });
+  assert.ok(/todo stale open=1 .*- run todo_check/.test(t), t);
+  rmSync(dir, { recursive: true, force: true });
+});
+test("liveStatusText: without todoLastFile falls back to item count", () => {
+  const t = liveStatusText({ todoFile: "" });
+  assert.ok(t.includes("todo items="), t);
 });

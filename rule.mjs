@@ -484,7 +484,7 @@ function readAsarJson(asarPath, innerPath) {  const fd = openSync(asarPath, "r")
 }
 
 /**
- * 现场状态一行：宿主版本、门铃 VERSION、维护报告时间/issue 数、待办条目数、marker。
+ * 现场状态一行：宿主版本、门铃 VERSION、维护报告时间/issue 数、待办判定（含采样时间，超过 10 分钟标 stale）、marker。
  * 只读文件，不跑子进程；任何异常返回 ""（fail-open）。
  */
 export function liveStatusText(opts = {}) {
@@ -536,8 +536,22 @@ export function liveStatusText(opts = {}) {
         todos = `${items.length} (ask ${ask}; run todo_check for verdict)`;
       } catch { todos = "parse-error"; }
     }
+    // 待办判定（2026-11-13）：todo_check 每轮由 -Turbo 刷新并写 todoLastFile（todo_last.txt）。
+    // 状态行直接展示判定与采样时间；超过 10 分钟标 stale，避免把旧判定当现状报。
+    let todoVerdict = "";
+    const tlf = opts.todoLastFile || "";
+    if (tlf && existsSync(tlf)) {
+      try {
+        const stl = statSync(tlf);
+        const ageMin = (now.getTime() - stl.mtime.getTime()) / 60000;
+        const hh = `${pad(stl.mtime.getHours())}:${pad(stl.mtime.getMinutes())}`;
+        const m = readFileSync(tlf, "utf8").match(/summary:\s*(open=\d+[^\r\n]*)/);
+        if (m) todoVerdict = ageMin <= 10 ? `${m[1].trim()} @${hh}` : `stale ${m[1].trim()} @${hh} - run todo_check`;
+      } catch {}
+    }
     const marker = rp ? (existsSync(rp.replace(/MAINT-LATEST\.md$/i, "MAINT-OPEN.md")) ? "present" : "absent") : "?";
-    return `[现场状态 ${ts}] host=${host} bell=v${bell}; maint=${maint}; todo items=${todos}; marker=${marker}. 报状态用这里的数字，旧记忆/旧快照作废。`;
+    const todoPart = todoVerdict ? `todo ${todoVerdict}` : `todo items=${todos}`;
+    return `[现场状态 ${ts}] host=${host} bell=v${bell}; maint=${maint}; ${todoPart}; marker=${marker}. 报状态用这里的数字，旧记忆/旧快照作废。`;
   } catch (e) {
     return "";
   }

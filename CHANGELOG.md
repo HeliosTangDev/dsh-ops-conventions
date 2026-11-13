@@ -6,6 +6,12 @@
 - 起因：`D:\software\ToolsUse\_tools\todo\todo.json` 被 PowerShell 的 `Set-Content -Encoding utf8` 写成 UTF-8 BOM（首字节 `EF BB BF`），插件状态行显示 `todo items=parse-error`，而 `todo_check.ps1` 用 PowerShell 读所以正常，出现两处口径不一致。该文件已去 BOM；本改动负责读方容错，类似文件再被写坏时不再表现为 parse-error。
 - 测试 +2：BOM 开头的 JSON 可解析；带 BOM 的 `todo.json` 下 `statusSummary`/`liveStatusText` 不再出现 `parse-error`。
 
+### 状态行显示待办判定与采样时间
+
+- `liveStatusText()` 新增读 `todoLastFile`（`todo_last.txt`，由每轮 `-Turbo` 里的 `todo-summary` 执行 `todo_check.ps1` 刷新）：状态行从原来的 `todo items=N (ask N; run todo_check for verdict)` 改为 `todo open=0 done=0 ask=2 wait=0 err=0 @HH:mm`；快照 mtime 超过 10 分钟则显式写 `stale … - run todo_check`，读不到则退回条目数。解决"旧会话只读轮拿旧判定当现状报"的问题。
+- `index.mjs` 状态行调用补传 `todoLastFile` 配置（两处调用点只改状态行那处；`statusSummary` 原本就传了）。
+- 测试 +3：新鲜快照出判定、超 10 分钟出 stale、无 `todoLastFile` 退回条目数。
+
 ## 0.9.6（2026-11-08）
 
 ### 总开关 enabled
