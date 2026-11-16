@@ -1,5 +1,11 @@
 ## 未发布（2026-11-13）
 
+### 校验器白名单：允许无副作用前缀，解结构门死锁（2026-11-16）
+
+- 症状：结构检查器命令带前置语句（`[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false); python tools_check.py`）时，`isCheckerCommandSafe` 把前缀当成「串联」→ 不给白名单 → 结构门照旧拒绝，而解锁条件恰恰是跑这个检查器，形成死锁，只能靠人工拆命令绕过。
+- 修：新增 `SAFE_PREFIX` 白名单，只剥离三种字面写法——`[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)`、`chcp 65001`、`$OutputEncoding = [Console]::OutputEncoding`（可连剥 3 条）；剥离后再套原有规则，因此 `前缀; 检查器; Remove-Item`、`前缀; Write-Host x; 检查器` 仍然拒绝。
+- 测试先行：先补 7 条断言（3 条应放行、4 条应拒绝）跑出 RED，再实现，`node --test` 63/63 通过。
+
 ### 读 JSON 容忍 UTF-8 BOM
 
 - `rule.mjs` 新增 `readJsonFile()`（`JSON.parse` 前剥掉 `^\uFEFF`），替换 4 处 `JSON.parse(readFileSync(...))`：`bell_state.json`、待办 `todo.json`、插件 `package.json`、状态汇总里的待办读取；`index.mjs` 同步替换 3 处（投影缓存、`ops-checks-last.json`、profile `package.json`）。

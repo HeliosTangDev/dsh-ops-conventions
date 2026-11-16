@@ -292,6 +292,26 @@ export function isTodoCheck(name, args) {
 const PIPE_DISPLAY =
   /^(select-object|select|format-table|format-list|format-wide|out-string|out-host|out-null|sort-object|measure-object|convertto-json|findstr|more)\b/i;
 
+/**
+ * 只影响输出编码、不产生副作用的前缀语句（末尾带 `;`）。
+ * 宿主/工具链常把 `[Console]::OutputEncoding = ...;` 塞在真命令前面，
+ * 若不剥掉，检查器命令会被下面的「串联一律拒绝」误判，导致结构门死锁
+ * （要解锁得跑检查器，而跑检查器又被门拒）。白名单只认这三种字面写法。
+ */
+const SAFE_PREFIX =
+  /^\s*(?:\[(?:System\.)?Console\]::OutputEncoding\s*=\s*\[System\.Text\.[A-Za-z0-9_.]+\]::new\(\s*\$false\s*\)|chcp\s+65001|\$OutputEncoding\s*=\s*\[(?:System\.)?Console\]::OutputEncoding)\s*;\s*/i;
+
+/** 连续剥掉多条无副作用前缀（上限 3 条，防病态输入） */
+function stripSafePrefixes(s) {
+  let out = s;
+  for (let i = 0; i < 3; i++) {
+    const next = out.replace(SAFE_PREFIX, "");
+    if (next === out) break;
+    out = next;
+  }
+  return out;
+}
+
 export function isCheckerCommandSafe(name, args, gates = []) {
   if (!SHELL_TOOL.test(String(name ?? "").trim())) return false;
   const isChecker = isTodoCheck(name, args) || structCheckIds(name, args, gates).length > 0;
@@ -299,7 +319,7 @@ export function isCheckerCommandSafe(name, args, gates = []) {
   for (const raw of collectStrings(args)) {
     const s = String(raw);
     // 先剥掉无副作用重定向（2>&1 / 2>nul / >nul / 2>$null）
-    const stripped = s.replace(/[0-9*]?>\s*(&[12]|nul\b|\$null)/gi, "");
+    const stripped = stripSafePrefixes(s.replace(/[0-9*]?>\s*(&[12]|nul\b|\$null)/gi, ""));
     if (/[;&]/.test(stripped)) return false; // 串联一律拒绝
     const segs = stripped.split("|");
     if (/>/.test(segs[0])) return false; // 主命令不许写文件

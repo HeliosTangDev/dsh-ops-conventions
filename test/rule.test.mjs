@@ -137,6 +137,18 @@ test("校验器白名单：单条放行；显示类管道放行；串联/危险�
   assert.equal(isCheckerCommandSafe("read", { file_path: ps }), false);
 });
 
+test("校验器白名单：允许无副作用前缀（编码设置/chcp），其余串联仍拒", () => {
+  const ps = "powershell -NoProfile -ExecutionPolicy Bypass -File D:\\x\\todo_check.ps1";
+  const enc = "[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false); ";
+  assert.equal(isCheckerCommandSafe("pwsh", { command: enc + ps }), true);
+  assert.equal(isCheckerCommandSafe("pwsh", { command: "chcp 65001; " + ps }), true);
+  assert.equal(isCheckerCommandSafe("pwsh", { command: "$OutputEncoding = [Console]::OutputEncoding; " + ps }), true);
+  assert.equal(isCheckerCommandSafe("pwsh", { command: enc + ps + "; Remove-Item D:\\x -Force" }), false);
+  assert.equal(isCheckerCommandSafe("pwsh", { command: "Write-Host hi; " + ps }), false);
+  assert.equal(isCheckerCommandSafe("pwsh", { command: enc + "Write-Host hi; " + ps }), false);
+  assert.equal(isCheckerCommandSafe("pwsh", { command: enc }), false);
+});
+
 test("结构门：默认空；配置后按路径命中，跑过检查器即记 id", () => {
   assert.deepEqual(structGatesFor({ file_path: "D:\\a\\b" }), []);
   assert.deepEqual(structCheckIds("pwsh", { command: "python x.py" }), []);
