@@ -86,8 +86,42 @@ node install.mjs /path/to/profile --uninstall     # 卸载
     #     require: "@\\d{1,2}:\\d{2}"
     #     message: "报状态要带命令、采样时间与数据年龄"
     # replyCheckBlock: true           # 违规后本轮拒绝写类工具（连续两轮自动解除）
+    # 可选：窄工具 ops_run（只跑白名单里的脚本），默认关闭
+    # narrowTool: true
+    # narrowConfigFile: "D:\\my-work\\tools-run.json"  # 白名单文件，改它不用重启
+    # narrowRoot: "D:\\my-work\\tools"                 # 白名单文件没写 rootDir 时的兜底根目录
   disabled: false
 ```
+
+### 窄工具（`ops_run`，默认关闭）
+
+只解决一件事：让 agent 在**不放开任意执行**的前提下，跑你指定的那几个脚本。
+
+- 调用方只能给 `id` 和参数；**路径、cwd、解释器全部来自白名单文件**，不接受任意 path/args/cwd。
+- 参数必须逐项命中该条目的 `allowedArgs`（字面量白名单，不做通配）；未知 id / 未授权参数直接拒。
+- 执行永远 `shell: false`，`cwd` 固定为 `rootDir`，有 `timeoutMs` 与 `maxOutputBytes`，超时/截断如实上报。
+- 每次调用写一行审计到插件日志（`narrow run id=… exit=… timeout=… duration=…`）。
+
+白名单文件格式（仓库里 `tools-run.example.json` 可照抄）：
+
+```json
+{
+  "rootDir": "D:\\my-work\\tools",
+  "scripts": [
+    {
+      "id": "todo-check",
+      "path": "D:\\my-work\\tools\\todo_check.ps1",
+      "launcher": ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File"],
+      "allowedArgs": ["-Json"],
+      "timeoutMs": 60000,
+      "maxOutputBytes": 20000
+    }
+  ]
+}
+```
+
+约束：`path` 必须是绝对路径、不得含 `..`、必须落在 `rootDir` 之内；`launcher` 是固定前缀（跑 `.ps1` 常用上面那串），不会拼进任何调用方参数。**不要**把解释器、路径或 `cwd` 做成可传参——那样等于通用执行器，一个提示注入就能当后门。
+
 
 ### 最小约定目录
 

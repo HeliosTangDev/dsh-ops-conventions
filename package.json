@@ -18,11 +18,14 @@
     "exports":  {
                     ".":  "./index.mjs",
                     "./rule":  "./rule.mjs",
+                    "./narrow":  "./narrow.mjs",
                     "./package.json":  "./package.json"
                 },
     "files":  [
                   "index.mjs",
                   "rule.mjs",
+                  "narrow.mjs",
+                  "tools-run.example.json",
                   "install.mjs",
                   "cordis.patch.yml",
                   "skills",

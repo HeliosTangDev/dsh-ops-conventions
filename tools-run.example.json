@@ -1,0 +1,21 @@
+{
+  "rootDir": "D:\\tools-root",
+  "scripts": [
+    {
+      "id": "example-ps1",
+      "path": "D:\\tools-root\\check.ps1",
+      "launcher": ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File"],
+      "allowedArgs": ["-Json"],
+      "timeoutMs": 60000,
+      "maxOutputBytes": 20000
+    },
+    {
+      "id": "example-exe",
+      "path": "D:\\tools-root\\tool.exe",
+      "launcher": [],
+      "allowedArgs": [],
+      "timeoutMs": 30000,
+      "maxOutputBytes": 20000
+    }
+  ]
+}

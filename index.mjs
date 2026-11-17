@@ -142,6 +142,10 @@ export function apply(ctx, config = {}) {
   const installedProfileDirs = Array.isArray(config.installedProfileDirs) ? config.installedProfileDirs : [];
   // 可选：只读状态工具 ops_status（默认关闭）
   const statusTool = config.statusTool === true;
+  // 可选：窄工具 ops_run（默认关闭；白名单来自配置文件，路径/参数/解释器都不接受调用方传入）
+  const narrowTool = config.narrowTool === true;
+  const narrowConfigFile = typeof config.narrowConfigFile === "string" ? config.narrowConfigFile : "";
+  const narrowRoot = typeof config.narrowRoot === "string" ? config.narrowRoot : "";
   const todoLastFile = typeof config.todoLastFile === "string" ? config.todoLastFile : "";
   const memoryDir = typeof config.memoryDir === "string" ? config.memoryDir : "";
   // 可选：回复合规扫描（规则由个人配置提供；命中在下一轮注入警告 + 落文件）
@@ -941,5 +945,75 @@ export function apply(ctx, config = {}) {
         log(`status tool registered: ops_status repo=${config.statusRepoDir ? "yes" : "no"}`);
       })
       .catch((err) => log(`status tool skipped: ${err?.message ?? String(err)}`));
+  }
+
+  // ---- 窄工具 ops_run（2026-11-18；需 config.narrowTool: true） ----
+  // 只暴露「脚本 id + 白名单里的参数」：路径、cwd、解释器全部来自配置文件，
+  // 不接受任意 path/args/cwd，spawn 不用 shell。逻辑在 narrow.mjs，这里只做注册与审计。
+  if (narrowTool) {
+    if (!narrowConfigFile) {
+      log("narrow tool skipped: config.narrowConfigFile not set");
+    } else {
+      import("./narrow.mjs")
+        .then(({ parseNarrowConfig, planNarrowRun, runNarrow }) => {
+          if (!ctx.tools || typeof ctx.tools.register !== "function") {
+            log("narrow tool skipped: ctx.tools unavailable");
+            return;
+          }
+          const loadNarrow = () => {
+            let raw;
+            try {
+              raw = readJsonFile(narrowConfigFile);
+            } catch (err) {
+              return { scripts: new Map(), errors: [`读取 ${narrowConfigFile} 失败: ${err?.message ?? String(err)}`] };
+            }
+            return parseNarrowConfig(raw, { rootDir: narrowRoot });
+          };
+          return import("@deepseek-ai/dsh-tools").then(({ defineTool }) => {
+            ctx.tools.register(
+              defineTool({
+                name: "ops_run",
+                description:
+                  "Run ONE whitelisted local script by id with whitelisted arguments. Not a general executor: the path comes from the config whitelist, arguments must appear verbatim in that entry's allowedArgs, cwd is fixed, no shell, output capped. Unknown id or argument is rejected.",
+                parameters: {
+                  id: { type: "string", description: "Whitelisted script id (see config narrowConfigFile)" },
+                  args: {
+                    type: "array",
+                    items: { type: "string" },
+                    description: "Arguments; each must be listed verbatim in the entry's allowedArgs",
+                  },
+                },
+                output: {
+                  schema: { type: "object", additionalProperties: true },
+                  render: (_args, value) => [{ type: "text", text: JSON.stringify(value, null, 2) }],
+                },
+                async execute(args) {
+                  const { scripts, errors } = loadNarrow();
+                  const wanted = args?.args ?? [];
+                  const plan = planNarrowRun(scripts, args?.id, wanted);
+                  if (!plan.ok) {
+                    log(`narrow run rejected id=${args?.id} reason=${plan.reason}`);
+                    return { ok: false, id: String(args?.id ?? ""), error: plan.reason, configErrors: errors };
+                  }
+                  const res = await runNarrow(plan.entry, wanted, { audit: (line) => log(line) });
+                  return {
+                    id: plan.entry.id,
+                    exitCode: res.code,
+                    timedOut: res.timedOut,
+                    truncated: res.truncated,
+                    durationMs: res.durationMs,
+                    stdout: res.stdout,
+                    stderr: res.stderr,
+                    error: res.error || undefined,
+                    configErrors: errors.length ? errors : undefined,
+                  };
+                },
+              }),
+            );
+            log(`narrow tool registered: ops_run config=${narrowConfigFile}`);
+          });
+        })
+        .catch((err) => log(`narrow tool skipped: ${err?.message ?? String(err)}`));
+    }
   }
 }

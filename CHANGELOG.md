@@ -1,5 +1,13 @@
 ## 未发布（2026-11-13）
 
+### 窄工具逻辑框架：`narrow.mjs` + `ops_run`（2026-11-18）
+
+- 新增 `narrow.mjs`（纯逻辑 + 单一执行入口）：`parseNarrowConfig`（校验白名单：id 合法/唯一、path 绝对且不含 `..`、必须落在 `rootDir` 内、allowedArgs 逐项过滤、launcher 上限）、`planNarrowRun`（未知 id、未授权参数、参数过多/过长一律拒）、`runNarrow`（`shell:false`、固定 `cwd`、`timeoutMs`、`maxOutputBytes` 截断、审计一行、异常不外抛）。
+- `index.mjs` 新增可选工具 `ops_run`（`config.narrowTool: true` 才注册，`narrowConfigFile` 每次调用现读，改白名单不用重启）：只接受 `id` + 白名单参数，不接受任意 path/args/cwd。
+- 新增 `tools-run.example.json`（通用示例，无个人路径）、`package.json` 的 `files`/`exports` 同步加 `narrow.mjs` 与示例文件、README 增「窄工具」一节。
+- 测试先行：`test/narrow.test.mjs` 8 条（合法/非法条目、rootDir 边界含大小写与斜杠差异、未知 id、未授权/超长/非字符串参数、无 allowedArgs 拒绝一切参数、spawn 不用 shell 且固定 cwd、launcher 前缀、输出截断、超时与非零退出、spawn 抛错不冒泡），`node --test` 71/71 通过。
+- 默认关闭、本轮不同步、不改任何 profile：启用需要本人加 `narrowTool`/`narrowConfigFile` 两项并关开插件。
+
 ### 校验器白名单：允许无副作用前缀，解结构门死锁（2026-11-16）
 
 - 症状：结构检查器命令带前置语句（`[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false); python tools_check.py`）时，`isCheckerCommandSafe` 把前缀当成「串联」→ 不给白名单 → 结构门照旧拒绝，而解锁条件恰恰是跑这个检查器，形成死锁，只能靠人工拆命令绕过。
