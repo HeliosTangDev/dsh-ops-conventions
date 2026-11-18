@@ -9,6 +9,7 @@ import {
   planNarrowRun,
   runNarrow,
   callerAllowed,
+  resolveCallerWorkspace,
 } from "../narrow.mjs";
 
 const ROOT = "D:\\software\\ToolsUse";
@@ -227,4 +228,15 @@ test("授权维度：非法 workspaces/sessions 条目被丢弃并报错", () =>
   assert.equal(scripts.has("bad2"), false);
   assert.equal(scripts.has("ok"), true);
   assert.equal(errors.length >= 2, true);
+});
+
+test("resolveCallerWorkspace：按 header/meta/cwd/workspace 顺序取值，取不到返回空", () => {
+  assert.equal(resolveCallerWorkspace({ cwd: "D:\\a" }), "D:\\a");
+  assert.equal(resolveCallerWorkspace({ header: { cwd: "D:\\b" } }), "D:\\b");
+  assert.equal(resolveCallerWorkspace({ meta: { cwd: "D:\\c" } }), "D:\\c");
+  assert.equal(resolveCallerWorkspace({ workspace: { path: "D:\\d" } }), "D:\\d");
+  assert.equal(resolveCallerWorkspace({ workspaceDir: "D:\\e" }), "D:\\e");
+  assert.equal(resolveCallerWorkspace({}, { cwd: "D:\\f" }), "D:\\f");
+  assert.equal(resolveCallerWorkspace({ header: { cwd: "  " } }), "");
+  assert.equal(resolveCallerWorkspace(null), "");
 });

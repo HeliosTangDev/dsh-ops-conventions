@@ -167,12 +167,6 @@ export function apply(ctx, config = {}) {
     }
     return mod.parseNarrowConfig(raw, { rootDir: narrowRoot });
   }
-  // 调用方工作区：会话对象优先；取不到返回空串（授权判定会按默认拒绝处理）
-  function callerWorkspace(exec) {
-    const sess = exec?.agent?.session;
-    const c = sess?.cwd ?? sess?.workspace ?? exec?.agent?.cwd ?? "";
-    return typeof c === "string" ? c : "";
-  }
   const todoLastFile = typeof config.todoLastFile === "string" ? config.todoLastFile : "";
   const memoryDir = typeof config.memoryDir === "string" ? config.memoryDir : "";
   // 可选：回复合规扫描（规则由个人配置提供；命中在下一轮注入警告 + 落文件）
@@ -790,9 +784,10 @@ export function apply(ctx, config = {}) {
             const entry = scripts.get(id);
             const sid = exec?.agent?.session?.id ?? "";
             if (entry) {
-              const verdict = mod.callerAllowed(entry, { workspace: callerWorkspace(exec), sid });
+              const workspace = mod.resolveCallerWorkspace(exec?.agent?.session, exec?.agent);
+              const verdict = mod.callerAllowed(entry, { workspace, sid });
               if (!verdict.ok) {
-                log(`narrow deny id=${id} session=${sid} reason=${verdict.reason}`);
+                log(`narrow deny id=${id} session=${sid} workspace=${workspace || "(unknown)"} reason=${verdict.reason}`);
                 appendSignal("deny", sid, "ops_run", "gate=narrow-scope");
                 return { kind: "deny", reason: `ops_run 被拒：${verdict.reason}` };
               }

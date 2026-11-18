@@ -8,6 +8,7 @@
 - 工作区匹配按前缀（含子目录）、忽略大小写与斜杠方向；写错类型/相对路径的条目整条丢弃并报错（宁可“未知 id 被拒”，不静默变成全拒或全放）。
 - 测试 +11（授权维度：默认拒绝/`*` 全局/子目录/大小写与斜杠/会话收窄/非法条目丢弃），`node --test` 79/79 通过。
 - 兼容：0.9.6 写的白名单没有 `workspaces` 会被全部拒绝——这是有意的 fail-closed，升级时按 `tools-run.example.json` 补 `workspaces`。
+- 2026-11-19 补：实测本机会话对象上 `cwd` 不在 `sess.cwd`（首次启用时日志报“拿不到调用方工作区”）。`narrow.mjs` 新增 `resolveCallerWorkspace(sess, agent)`，按 `cwd → header.cwd → meta.cwd → workspace.path → workspacePath → workspaceDir → agent.cwd → agent.workspace.path` 取第一个非空值；取不到仍按默认拒绝。测试 +1（8 种字段位置与空值）。
 
 ## 0.9.6（续，2026-11-16 / 11-18，随 v0.9.6 一起发布）
 

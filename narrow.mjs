@@ -140,6 +140,27 @@ function normalizeScopeList(value, kind) {
   return out;
 }
 
+/**
+ * 取调用方工作区：会话对象上不同版本把 cwd 放在不同位置（header.cwd / meta.cwd / cwd / workspace.path），
+ * 逐个尝试；都取不到返回空串（授权判定按默认拒绝处理）。
+ * @param {object} sess 会话对象（exec.agent.session）
+ * @param {object} agent 可选，exec.agent
+ */
+export function resolveCallerWorkspace(sess, agent) {
+  const pick = (v) => (typeof v === "string" && v.trim() ? v : "");
+  const candidates = [
+    pick(sess?.cwd),
+    pick(sess?.header?.cwd),
+    pick(sess?.meta?.cwd),
+    pick(sess?.workspace?.path),
+    pick(sess?.workspacePath),
+    pick(sess?.workspaceDir),
+    pick(agent?.cwd),
+    pick(agent?.workspace?.path),
+  ];
+  return candidates.find(Boolean) ?? "";
+}
+
 const normWs = (p) => String(p ?? "").replace(/\//g, "\\").replace(/\\+$/, "").toLowerCase();
 
 /**
