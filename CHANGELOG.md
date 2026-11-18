@@ -416,3 +416,7 @@ pm test 也改为官方自动发现的 `node --test`。
 
 
 
+
+### 未发版（待下次升 0.9.9，2026-11-19）
+- 窄工具 ops_run 输出解码加 GBK 回退：子进程（PowerShell 5.1 / Python 在 cp936 下）输出已不是 UTF-8 时，先按 UTF-8 解，出现替换字符再按 GBK 解，避免「健康检查」变乱码导致检查正则误判。defaultSpawn 改为返回 Buffer（encoding: "buffer"），解码集中在 decodeOutput。
+- 测试先行：	est/narrow.test.mjs 新增 2 条（GBK 输出解码、UTF-8 不回归），14/14 通过。

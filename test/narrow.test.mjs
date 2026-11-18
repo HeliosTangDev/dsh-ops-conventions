@@ -240,3 +240,19 @@ test("resolveCallerWorkspace：按 header/meta/cwd/workspace 顺序取值，取�
   assert.equal(resolveCallerWorkspace({ header: { cwd: "  " } }), "");
   assert.equal(resolveCallerWorkspace(null), "");
 });
+test("runNarrow: GBK output is decoded as GBK when UTF-8 decoding would be lossy (PowerShell 5.1 cp936)", async () => {
+  const entry = { id: "gbk", path: OK_PATH, cwd: ROOT, allowedArgs: [], launcher: [], timeoutMs: 1000, maxOutputBytes: 1000 };
+  const gbkBytes = Buffer.from([0xbd, 0xa1, 0xbf, 0xb5, 0xbc, 0xec, 0xb2, 0xe9]); // 健康检查 in GBK
+  const res = await runNarrow(entry, [], {
+    spawn: () => ({ ok: true, code: 0, stdout: gbkBytes, stderr: Buffer.alloc(0), timedOut: false }),
+  });
+  assert.equal(res.stdout, "健康检查");
+});
+
+test("runNarrow: plain UTF-8 output stays UTF-8 (no GBK regression)", async () => {
+  const entry = { id: "utf8", path: OK_PATH, cwd: ROOT, allowedArgs: [], launcher: [], timeoutMs: 1000, maxOutputBytes: 1000 };
+  const res = await runNarrow(entry, [], {
+    spawn: () => ({ ok: true, code: 0, stdout: Buffer.from("健康检查", "utf8"), stderr: Buffer.alloc(0), timedOut: false }),
+  });
+  assert.equal(res.stdout, "健康检查");
+});

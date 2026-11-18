@@ -253,8 +253,8 @@ export async function runNarrow(entry, args = [], deps = {}) {
   }
 
   const limit = entry.maxOutputBytes;
-  const stdoutRaw = String(raw?.stdout ?? "");
-  const stderrRaw = String(raw?.stderr ?? "");
+  const stdoutRaw = decodeOutput(raw?.stdout);
+  const stderrRaw = decodeOutput(raw?.stderr);
   const truncated = stdoutRaw.length > limit || stderrRaw.length > limit;
   const result = {
     ok: raw?.ok === true && raw?.timedOut !== true,
@@ -273,11 +273,20 @@ export async function runNarrow(entry, args = [], deps = {}) {
   return result;
 }
 
+function decodeOutput(value) {
+  if (value === null || value === undefined) return "";
+  if (typeof value === "string") return value;
+  const buf = Buffer.isBuffer(value) ? value : Buffer.from(value);
+  const utf8 = new TextDecoder("utf-8").decode(buf);
+  if (!utf8.includes("\uFFFD")) return utf8;
+  try { return new TextDecoder("gbk").decode(buf); } catch { return utf8; }
+}
+
 function defaultSpawn(file, argv, opts) {
   const r = spawnSync(file, argv, {
     cwd: opts.cwd,
     timeout: opts.timeoutMs,
-    encoding: "utf8",
+    encoding: "buffer",
     shell: false,
     windowsHide: true,
     maxBuffer: Math.max(opts.maxOutputBytes * 8, 1024 * 1024),
