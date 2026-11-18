@@ -2,18 +2,30 @@
   "rootDir": "D:\\tools-root",
   "scripts": [
     {
-      "id": "example-ps1",
+      "id": "example-ps1-scoped",
       "path": "D:\\tools-root\\check.ps1",
       "launcher": ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File"],
       "allowedArgs": ["-Json"],
+      "workspaces": ["D:\\tools-root", "D:\\my-notes"],
       "timeoutMs": 60000,
       "maxOutputBytes": 20000
     },
     {
-      "id": "example-exe",
+      "id": "example-exe-global",
       "path": "D:\\tools-root\\tool.exe",
       "launcher": [],
       "allowedArgs": [],
+      "workspaces": ["*"],
+      "timeoutMs": 30000,
+      "maxOutputBytes": 20000
+    },
+    {
+      "id": "example-one-session-only",
+      "path": "D:\\tools-root\\check.ps1",
+      "launcher": ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File"],
+      "allowedArgs": [],
+      "workspaces": ["D:\\tools-root"],
+      "sessions": ["session-REPLACE-ME"],
       "timeoutMs": 30000,
       "maxOutputBytes": 20000
     }

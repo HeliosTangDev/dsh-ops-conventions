@@ -99,6 +99,7 @@ node install.mjs /path/to/profile --uninstall     # 卸载
 
 - 调用方只能给 `id` 和参数；**路径、cwd、解释器全部来自白名单文件**，不接受任意 path/args/cwd。
 - 参数必须逐项命中该条目的 `allowedArgs`（字面量白名单，不做通配）；未知 id / 未授权参数直接拒。
+- **授权按工作区/会话**：每条必须写 `workspaces`（`["*"]` 才是全局，不写=拒绝）；可选 `sessions` 再收窄到具体会话 id。判定在 `tools/pre-execute` 里做，用的是调用方会话的 `cwd`。
 - 执行永远 `shell: false`，`cwd` 固定为 `rootDir`，有 `timeoutMs` 与 `maxOutputBytes`，超时/截断如实上报。
 - 每次调用写一行审计到插件日志（`narrow run id=… exit=… timeout=… duration=…`）。
 
@@ -113,6 +114,8 @@ node install.mjs /path/to/profile --uninstall     # 卸载
       "path": "D:\\my-work\\tools\\todo_check.ps1",
       "launcher": ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File"],
       "allowedArgs": ["-Json"],
+      "workspaces": ["D:\\my-work\\tools", "D:\\my-notes"],
+      "sessions": ["session-xxxxxxxx"],
       "timeoutMs": 60000,
       "maxOutputBytes": 20000
     }
@@ -120,7 +123,7 @@ node install.mjs /path/to/profile --uninstall     # 卸载
 }
 ```
 
-约束：`path` 必须是绝对路径、不得含 `..`、必须落在 `rootDir` 之内；`launcher` 是固定前缀（跑 `.ps1` 常用上面那串），不会拼进任何调用方参数。**不要**把解释器、路径或 `cwd` 做成可传参——那样等于通用执行器，一个提示注入就能当后门。
+约束：`path` 必须是绝对路径、不得含 `..`、必须落在 `rootDir` 之内；`workspaces` 里每一项必须是 `"*"` 或绝对路径，调用方工作区等于它或在其子目录下才放行；`sessions` 不写表示不限会话。**不要**把解释器、路径或 `cwd` 做成可传参——那样等于通用执行器，一个提示注入就能当后门。
 
 
 ### 最小约定目录

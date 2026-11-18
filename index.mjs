@@ -146,6 +146,33 @@ export function apply(ctx, config = {}) {
   const narrowTool = config.narrowTool === true;
   const narrowConfigFile = typeof config.narrowConfigFile === "string" ? config.narrowConfigFile : "";
   const narrowRoot = typeof config.narrowRoot === "string" ? config.narrowRoot : "";
+  let narrowMod = null;
+  async function getNarrow() {
+    if (narrowMod) return narrowMod;
+    try {
+      narrowMod = await import("./narrow.mjs");
+    } catch (err) {
+      log(`narrow module unavailable: ${err?.message ?? String(err)}`);
+      narrowMod = null;
+    }
+    return narrowMod;
+  }
+  // 每次调用现读白名单：改 tools-run.json 不用重启（配合守卫做会话/工作区授权）
+  function loadNarrowScripts(mod) {
+    let raw;
+    try {
+      raw = readJsonFile(narrowConfigFile);
+    } catch (err) {
+      return { scripts: new Map(), errors: [`读取 ${narrowConfigFile} 失败: ${err?.message ?? String(err)}`] };
+    }
+    return mod.parseNarrowConfig(raw, { rootDir: narrowRoot });
+  }
+  // 调用方工作区：会话对象优先；取不到返回空串（授权判定会按默认拒绝处理）
+  function callerWorkspace(exec) {
+    const sess = exec?.agent?.session;
+    const c = sess?.cwd ?? sess?.workspace ?? exec?.agent?.cwd ?? "";
+    return typeof c === "string" ? c : "";
+  }
   const todoLastFile = typeof config.todoLastFile === "string" ? config.todoLastFile : "";
   const memoryDir = typeof config.memoryDir === "string" ? config.memoryDir : "";
   // 可选：回复合规扫描（规则由个人配置提供；命中在下一轮注入警告 + 落文件）
@@ -754,6 +781,25 @@ export function apply(ctx, config = {}) {
         // 校验器白名单：待办/结构检查器是「解锁动作」，必须先放行，否则会死锁。
         // 严格：只认单条校验器命令（禁止 ; && || | 与文件重定向）。
         if (isCheckerCommandSafe(exec.name, exec.arguments, structGates)) return next();
+        // 窄工具授权层（2026-11-19）：宿主工具绕开会话沙箱，所以“按工作区/按会话授权”必须在这里判。
+        if (narrowTool && exec.name === "ops_run") {
+          const mod = await getNarrow();
+          if (mod) {
+            const { scripts } = loadNarrowScripts(mod);
+            const id = String(exec?.arguments?.id ?? "");
+            const entry = scripts.get(id);
+            const sid = exec?.agent?.session?.id ?? "";
+            if (entry) {
+              const verdict = mod.callerAllowed(entry, { workspace: callerWorkspace(exec), sid });
+              if (!verdict.ok) {
+                log(`narrow deny id=${id} session=${sid} reason=${verdict.reason}`);
+                appendSignal("deny", sid, "ops_run", "gate=narrow-scope");
+                return { kind: "deny", reason: `ops_run 被拒：${verdict.reason}` };
+              }
+            }
+            // 未知 id 不在这里判：交给工具执行路径按“不在白名单”拒绝
+          }
+        }
         const writeAttempt = needsGuard(exec.name, exec.arguments, blockedTools);
         if (!writeAttempt) return next();
         const sess = exec?.agent?.session;
@@ -954,21 +1000,14 @@ export function apply(ctx, config = {}) {
     if (!narrowConfigFile) {
       log("narrow tool skipped: config.narrowConfigFile not set");
     } else {
-      import("./narrow.mjs")
-        .then(({ parseNarrowConfig, planNarrowRun, runNarrow }) => {
+      getNarrow()
+        .then((mod) => {
+          if (!mod) return;
           if (!ctx.tools || typeof ctx.tools.register !== "function") {
             log("narrow tool skipped: ctx.tools unavailable");
             return;
           }
-          const loadNarrow = () => {
-            let raw;
-            try {
-              raw = readJsonFile(narrowConfigFile);
-            } catch (err) {
-              return { scripts: new Map(), errors: [`读取 ${narrowConfigFile} 失败: ${err?.message ?? String(err)}`] };
-            }
-            return parseNarrowConfig(raw, { rootDir: narrowRoot });
-          };
+          const loadNarrow = () => loadNarrowScripts(mod);
           return import("@deepseek-ai/dsh-tools").then(({ defineTool }) => {
             ctx.tools.register(
               defineTool({
@@ -990,12 +1029,12 @@ export function apply(ctx, config = {}) {
                 async execute(args) {
                   const { scripts, errors } = loadNarrow();
                   const wanted = args?.args ?? [];
-                  const plan = planNarrowRun(scripts, args?.id, wanted);
+                  const plan = mod.planNarrowRun(scripts, args?.id, wanted);
                   if (!plan.ok) {
                     log(`narrow run rejected id=${args?.id} reason=${plan.reason}`);
                     return { ok: false, id: String(args?.id ?? ""), error: plan.reason, configErrors: errors };
                   }
-                  const res = await runNarrow(plan.entry, wanted, { audit: (line) => log(line) });
+                  const res = await mod.runNarrow(plan.entry, wanted, { audit: (line) => log(line) });
                   return {
                     id: plan.entry.id,
                     exitCode: res.code,

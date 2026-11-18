@@ -82,6 +82,19 @@ export function parseNarrowConfig(raw, fallback = {}) {
       errors.push(`${at}(${id}): allowedArgs 含非字符串或超长项，已丢弃`);
     }
 
+    // 授权维度：workspaces 必须显式写（默认拒绝）；"*" 表示任意工作区。
+    // 写错类型/写相对路径时直接丢弃该条目（宁可未知 id 被拒，也不要静默变成"全拒"或"全放"）。
+    const workspaces = normalizeScopeList(item.workspaces, "path");
+    if (workspaces === null) {
+      errors.push(`${at}(${id}): workspaces 必须是字符串数组（"*" 或绝对路径），该条目已丢弃`);
+      continue;
+    }
+    const sessions = normalizeScopeList(item.sessions, "sid");
+    if (sessions === null) {
+      errors.push(`${at}(${id}): sessions 必须是字符串数组（"*" 或会话 id），该条目已丢弃`);
+      continue;
+    }
+
     const launcher = Array.isArray(item.launcher)
       ? item.launcher.filter((a) => typeof a === "string" && a.length > 0)
       : [];
@@ -97,10 +110,67 @@ export function parseNarrowConfig(raw, fallback = {}) {
       launcher: launcher.slice(0, NARROW_LIMITS.launcherMax),
       timeoutMs: clampNumber(item.timeoutMs, NARROW_LIMITS.timeoutMs),
       maxOutputBytes: clampNumber(item.maxOutputBytes, NARROW_LIMITS.maxOutputBytes),
+      workspaces: workspaces ?? [],
+      sessions: sessions ?? [],
     });
   }
 
   return { scripts, errors };
+}
+
+/**
+ * 归一化授权列表：字符串数组；path 类只允许 "*" 或绝对路径，sid 类只允许 "*" 或非空串。
+ * @returns {string[]|null} null 表示给了但不是字符串数组（调用方记错误）
+ */
+function normalizeScopeList(value, kind) {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value)) return null;
+  const out = [];
+  for (const raw of value) {
+    if (typeof raw !== "string") return null;
+    const s = raw.trim();
+    if (!s) continue;
+    if (s === "*") {
+      out.push("*");
+      continue;
+    }
+    if (kind === "path" && !isAbsolutePath(s)) return null;
+    out.push(s);
+  }
+  return out;
+}
+
+const normWs = (p) => String(p ?? "").replace(/\//g, "\\").replace(/\\+$/, "").toLowerCase();
+
+/**
+ * 判断“这次调用来自哪个会话/工作区”是否在该条目授权范围内（fail-closed）。
+ * workspaces 未写 = 拒绝（必须在白名单里显式写范围，或写 ["*"] 表示全局）。
+ * sessions 未写 = 不额外限制（仍受 workspaces 约束）。
+ * @param {object} entry 白名单条目
+ * @param {{workspace?: string, sid?: string}} caller 调用方身份
+ */
+export function callerAllowed(entry, caller = {}) {
+  const workspaces = Array.isArray(entry?.workspaces) ? entry.workspaces : [];
+  const sessions = Array.isArray(entry?.sessions) ? entry.sessions : [];
+  const sid = String(caller.sid ?? "");
+
+  if (sessions.length > 0 && !sessions.includes("*") && !sessions.includes(sid)) {
+    return { ok: false, reason: `会话 ${sid || "(unknown)"} 不在该条目的 sessions 白名单内` };
+  }
+  if (workspaces.length === 0) {
+    return { ok: false, reason: "该条目没有写 workspaces（默认拒绝；全局请显式写 [\"*\"]）" };
+  }
+  if (workspaces.includes("*")) return { ok: true };
+
+  const ws = normWs(caller.workspace);
+  if (!ws) {
+    return { ok: false, reason: "拿不到调用方工作区（会话未提供 cwd/workspace），按默认拒绝处理" };
+  }
+  for (const allowed of workspaces) {
+    const a = normWs(allowed);
+    if (ws === a || ws.startsWith(a + "\\")) return { ok: true };
+  }
+  return { ok: false, reason: `工作区 ${caller.workspace} 不在该条目的 workspaces 白名单内` };
 }
 
 function clampNumber(value, { default: def, max }) {

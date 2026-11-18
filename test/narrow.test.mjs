@@ -8,6 +8,7 @@ import {
   parseNarrowConfig,
   planNarrowRun,
   runNarrow,
+  callerAllowed,
 } from "../narrow.mjs";
 
 const ROOT = "D:\\software\\ToolsUse";
@@ -164,4 +165,66 @@ test("runNarrow：spawn 抛错时不把异常抛给工具层", async () => {
   );
   assert.equal(res.ok, false);
   assert.match(res.error, /ENOENT/);
+});
+
+test("授权维度：workspaces 必填（默认拒绝），* 表示全局", () => {
+  const { scripts } = parseNarrowConfig(
+    {
+      rootDir: ROOT,
+      scripts: [
+        { id: "scoped", path: OK_PATH, workspaces: [ROOT] },
+        { id: "global", path: OK_PATH, workspaces: ["*"] },
+        { id: "unscoped", path: OK_PATH },
+      ],
+    },
+    { rootDir: ROOT },
+  );
+  const scoped = scripts.get("scoped");
+  const global = scripts.get("global");
+  const unscoped = scripts.get("unscoped");
+
+  assert.equal(callerAllowed(scoped, { workspace: ROOT }).ok, true);
+  assert.equal(callerAllowed(scoped, { workspace: "D:\\software\\ToolsDev" }).ok, false);
+  assert.equal(callerAllowed(scoped, { workspace: ROOT + "\\_tools" }).ok, true);
+  assert.equal(callerAllowed(scoped, { workspace: "d:/SOFTWARE/toolsuse/" }).ok, true);
+  assert.equal(callerAllowed(scoped, {}).ok, false);
+
+  assert.equal(callerAllowed(global, { workspace: "Z:\\whatever" }).ok, true);
+  assert.equal(callerAllowed(global, {}).ok, true); // 全局条目不依赖工作区
+  assert.equal(callerAllowed(unscoped, { workspace: ROOT }).ok, false);
+  assert.match(callerAllowed(unscoped, { workspace: ROOT }).reason, /workspaces/);
+});
+
+test("授权维度：sessions 作为额外收窄，不写则不限制会话", () => {
+  const { scripts } = parseNarrowConfig(
+    {
+      rootDir: ROOT,
+      scripts: [
+        { id: "s1", path: OK_PATH, workspaces: ["*"], sessions: ["session-abc"] },
+        { id: "s2", path: OK_PATH, workspaces: ["*"] },
+      ],
+    },
+    { rootDir: ROOT },
+  );
+  assert.equal(callerAllowed(scripts.get("s1"), { workspace: ROOT, sid: "session-abc" }).ok, true);
+  assert.equal(callerAllowed(scripts.get("s1"), { workspace: ROOT, sid: "session-xyz" }).ok, false);
+  assert.equal(callerAllowed(scripts.get("s2"), { workspace: ROOT, sid: "session-xyz" }).ok, true);
+});
+
+test("授权维度：非法 workspaces/sessions 条目被丢弃并报错", () => {
+  const { scripts, errors } = parseNarrowConfig(
+    {
+      rootDir: ROOT,
+      scripts: [
+        { id: "bad1", path: OK_PATH, workspaces: "D:\\x" },
+        { id: "bad2", path: OK_PATH, workspaces: ["relative\\path"] },
+        { id: "ok", path: OK_PATH, workspaces: [ROOT] },
+      ],
+    },
+    { rootDir: ROOT },
+  );
+  assert.equal(scripts.has("bad1"), false);
+  assert.equal(scripts.has("bad2"), false);
+  assert.equal(scripts.has("ok"), true);
+  assert.equal(errors.length >= 2, true);
 });
