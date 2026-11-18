@@ -290,7 +290,7 @@ function defaultSpawn(file, argv, opts) {
     shell: false,
     windowsHide: true,
     maxBuffer: Math.max(opts.maxOutputBytes * 8, 1024 * 1024),
-    env: process.env,
+    env: { ...process.env, PYTHONIOENCODING: "gbk", PYTHONUTF8: "0" }, // child keeps the OEM code page; PowerShell re-emits UTF-8
   });
   return {
     ok: r.status === 0,
