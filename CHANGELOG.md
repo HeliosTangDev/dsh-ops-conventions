@@ -1,3 +1,11 @@
+## 0.9.8（2026-11-19）
+
+### 修：会话工作区取不到导致 ops_run 全部被拒
+
+- 现象：0.9.7 在本机首次启用 `narrowTool` 后，任何 `ops_run` 调用都被拒，理由「拿不到调用方工作区（会话未提供 cwd/workspace）」。原因是本机会话对象上 **`sess.cwd` 为空**，工作区实际在会话 header/meta 里（对照 `dsh-session` 的 `meta.cwd`、`header.cwd` 与 `dsh-workspace` 用 `header.cwd` 校验的实现）。
+- 修：`narrow.mjs` 新增 `resolveCallerWorkspace(sess, agent)`，按 `cwd → header.cwd → meta.cwd → workspace.path → workspacePath → workspaceDir → agent.cwd → agent.workspace.path` 取第一个非空值；仍取不到则维持 fail-closed（拒绝）。测试 +1（8 种字段位置、空串与 null），`node --test` 80/80。
+- 说明：v0.9.7 的 tag 与 Release 已在 `bec2d7a` 发布（不含本修复），按「已发布的 tag 不覆盖」约定改为发 0.9.8；启用 `narrowTool` 的用户请升到 0.9.8。
+
 ## 0.9.7（2026-11-19）
 
 ### 窄工具授权层：按工作区 / 按会话放行（补 0.9.6 的缺口）

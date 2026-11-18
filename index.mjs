@@ -1030,7 +1030,8 @@ export function apply(ctx, config = {}) {
                     return { ok: false, id: String(args?.id ?? ""), error: plan.reason, configErrors: errors };
                   }
                   const res = await mod.runNarrow(plan.entry, wanted, { audit: (line) => log(line) });
-                  return {
+                  // 宿主要求返回值是 lossless JSON：undefined 字段会让校验失败，先过一遍 JSON 归一化
+                  const payload = {
                     id: plan.entry.id,
                     exitCode: res.code,
                     timedOut: res.timedOut,
@@ -1038,9 +1039,10 @@ export function apply(ctx, config = {}) {
                     durationMs: res.durationMs,
                     stdout: res.stdout,
                     stderr: res.stderr,
-                    error: res.error || undefined,
-                    configErrors: errors.length ? errors : undefined,
+                    error: res.error || "",
+                    configErrors: errors.length ? errors : null,
                   };
+                  return JSON.parse(JSON.stringify(payload));
                 },
               }),
             );
