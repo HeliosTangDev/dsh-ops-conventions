@@ -20,6 +20,12 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
         node: [22, 24]
+        exclude:
+          # macOS 托管 runner 排队紧张：2026-11-19 两次 push（0.9.8、narrow 编码修复）各有一个
+          # macOS job 在「排队分配 runner」阶段被取消（steps 为空、runner_name 为空、约 15 分钟后 cancelled）。
+          # macOS 只保留 node 24，node 22 的覆盖由 ubuntu/windows 两个平台承担。
+          - os: macos-latest
+            node: 22
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
