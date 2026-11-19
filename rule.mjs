@@ -915,7 +915,16 @@ export function betterAssistantText(prev, next) {
   const n = String(next ?? "");
   if (!n) return p;
   if (isSummaryLike(n)) return p;
-  return n.length > p.length ? n : p;
+  // Streaming assistant text arrives as chunks: keep the growing snapshot when one is a
+  // prefix of the other, otherwise keep the TAIL of the concatenation so the end of the
+  // reply (where 待办/自检 live) is not lost when a chunk replaces the previous one.
+  if (n.startsWith(p) || p.startsWith(n)) return n.length > p.length ? n : p;
+  // Long assistant replies arrive as streamed chunks (~3000 chars each) with no prefix
+  // relation; keep the TAIL of the concatenation so 待办/自检 at the end survive.
+  // Short texts keep the historical "longer wins" semantics.
+  if (p.length < 1500) return n.length > p.length ? n : p;
+  const joined = p + n;
+  return joined.length > 20000 ? joined.slice(-20000) : joined;
 }
 
 /** 解析信号文件：每行 `ISO  kind=fail|deny  sid=…  tool=…  msg=…`。只统计窗口内、排除当前会话的条目。 */export function signalSummary(text, excludeSid = "", opts = {}) {
