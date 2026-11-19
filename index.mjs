@@ -48,6 +48,7 @@ import {
   resolveSkillsDir,
   shouldInject,
   skillsDirCandidates,
+  pickReviewText,
 } from "./rule.mjs";
 
 export const name = "dsh-ops-conventions";
@@ -686,7 +687,9 @@ export function apply(ctx, config = {}) {
           const asstCount = decMsgs.filter(isAssistant).length + inMsgs.filter(isAssistant).length;
           const cachedText = String(lastAsstBySid.get(sid) || "");
           const prevTurn = String(prevReplyBySid.get(sid) || "") || prevReplyGlobal;
-          const txt = (prev ? extractText(prev) : "") || prevTurn || cachedText;
+          // 2026-11-20: reply-check must scan the stitched reply, not the last streamed chunk
+          // (a final chunk starting after "## 待办" made reply-sections-no-todo fire falsely).
+          const txt = pickReviewText({ prevTurn, prev: prev ? extractText(prev) : "", cached: cachedText });
           log(`version scan: dec=${decMsgs.length} in=${inMsgs.length} asst=${asstCount} sid=${sid} prevTurn=${prevTurn.length} cached=${cachedText.length} textLen=${txt ? txt.length : -1}`);
           if (txt) {
             const installed = new Set();

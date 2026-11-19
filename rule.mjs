@@ -628,17 +628,33 @@ export function correctiveSignal(text) {
   return "";
 }
 
+/**
+ * Reply-check text selection (2026-11-20): prefer the stitched previous reply over the last
+ * assistant chunk. Long replies arrive as chunks; the final chunk can start after "## 待办", so
+ * scanning it alone produced false reply-sections-no-todo hits (log: len=1110 hits=1 while the
+ * full reply had both sections).
+ * @param {{prevTurn?: string, prev?: string, cached?: string}} parts
+ */
+export function pickReviewText({ prevTurn = "", prev = "", cached = "" } = {}) {
+  return String(prevTurn || prev || cached || "");
+}
+
 export function staleClaimVersions(text, live = {}) {
   const claim = /当前|现在|目前|已装|已升到|用的是|最新/;
   const sem = /\b\d+\.\d+\.\d+(?:-[A-Za-z0-9.]+)?\b/g;
   const vv = /\bv(\d{1,3})\b/g;
   const installed = live.installed instanceof Set ? live.installed : new Set();
+  // 2026-11-20：插件自身版本、宿主版本不是"误报来源"，直接算本机现状。
+  const ignored = new Set([live.host, live.pluginVersion].filter((v) => typeof v === "string" && v));
   const out = [];
-  for (const line of String(text || "").split(/\r?\n/)) {
-    if (!claim.test(line)) continue;
+  // 依赖范围表达式（>=x <y / ^x / ~x / x || y）描述的是"要求"，不是"本机现状"。
+  const RANGE = /(?:>=|<=|>|<|~|\^)\s*\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?|\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?\s*\|\|/g;
+  for (const rawLine of String(text || "").split(/\r?\n/)) {
+    if (!claim.test(rawLine)) continue;
+    const line = rawLine.replace(RANGE, " ");
     for (const m of line.matchAll(sem)) {
       const v = m[0];
-      if (installed.has(v) || v === live.host) continue;
+      if (installed.has(v) || ignored.has(v)) continue;
       // 2026-11-11: 插件自身版本与“要求/范围”表达式不是本机现状，别当误报。
       const before = line.slice(Math.max(0, m.index - 30), m.index);
       if (/(插件|plugin)/i.test(before)) continue;
@@ -976,8 +992,16 @@ export function habitCandidate(role, type, text) {
   const isUser = r.includes("user") || t.includes("user/message");
   if (!isUser) return "";
   const body = String(text ?? "").trim();
-  // 注入内容也会以 user/message 出现（门铃、记忆上下文、技能目录），不算用户追问。
-  if (/^(\[操作约定|<openviking-context>|<available-skills>|Instructions from|Relevant memory from OpenViking)/.test(body)) return "";
+  // 注入内容也会以 user/message 出现（门铃、记忆上下文、技能目录、上下文提醒、后台完成通知），不算用户追问。
+  // 2026-11-20：补上带属性的 <openviking-context ...>、[上下文提醒]/[会话压缩提示]/[版本核对] 等前缀，
+  // 以及后台任务完成通知（"background job … finished [status: …]"）——它们曾一天内被误捕获多条。
+  if (
+    /^(\[操作约定|<openviking-context\b|<available-skills>|Instructions from|Relevant memory from OpenViking|\[上下文提醒\]|\[会话压缩提示\]|\[版本核对\]|\[回复核对\]|\[事件信号\]|\[维护报告\]|\[OpenViking memory plugin\]|background job\b)/.test(
+      body,
+    )
+  ) {
+    return "";
+  }
   if (body.length < 8) return "";
   const marker = correctiveSignal(body);
   if (!marker) return "";

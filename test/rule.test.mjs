@@ -18,6 +18,7 @@ import {
   isReadOnlyTool,
   isShellWrite,
   isTodoCheck,
+  pickReviewText,
   maintHintText,
   signalSummary,
   signalHintText,
@@ -545,4 +546,45 @@ test("liveStatusText: todo_last.txt older than 10 min is marked stale", () => {
 test("liveStatusText: without todoLastFile falls back to item count", () => {
   const t = liveStatusText({ todoFile: "" });
   assert.ok(t.includes("todo items="), t);
+});
+
+test("pickReviewText prefers the stitched previous reply over one chunk", () => {
+  const stitched = "## 待办\n- a\n## 自检\n- b";
+  assert.equal(pickReviewText({ prevTurn: stitched, prev: "## 自检\n- b", cached: "x" }), stitched);
+});
+test("pickReviewText falls back to the chunk and then the cache", () => {
+  assert.equal(pickReviewText({ prevTurn: "", prev: "chunk", cached: "cached" }), "chunk");
+  assert.equal(pickReviewText({ prevTurn: "", prev: "", cached: "cached" }), "cached");
+  assert.equal(pickReviewText({}), "");
+});
+// 2026-11-20（改进池 blocked 项）：版本核对误报 + habit 注入前缀过滤
+test("版本核对：插件自身版本与依赖范围不算本机现状", () => {
+  const live = { host: "0.2.2-rc.3", installed: new Set(["0.2.2-rc.5"]), pluginVersion: "0.9.9" };
+  assert.deepEqual(staleClaimVersions("本机已装 0.9.9，插件 peer 要求 >=0.2.2-rc.1 <0.3.0-0", live), []);
+  assert.deepEqual(staleClaimVersions("现在插件是 0.9.9", live), []);
+  assert.deepEqual(staleClaimVersions("当前宿主 0.2.2-rc.1", live), ["0.2.2-rc.1"]);
+  assert.deepEqual(staleClaimVersions("现在用的是 0.2.2-rc.3", live), []);
+});
+
+test("habit 候选：注入前缀与后台完成通知不算用户追问", () => {
+  assert.equal(habitCandidate("user", "user/message", "[上下文提醒] 已用 60%（阈值 60%），先收尾"), "");
+  assert.equal(habitCandidate("user", "user/message", "<openviking-context source=\"profile\"> 画像"), "");
+  assert.equal(habitCandidate("user", "user/message", "[会话压缩提示] 会话已压缩"), "");
+  assert.equal(habitCandidate("user", "user/message", "[版本核对] 上一条回复在现状句里写了 0.9.8"), "");
+  assert.equal(
+    habitCandidate("user", "user/message", "background job pwsh-e6f5 (pwsh: cd x) finished [status: completed, exit code: 1]. Output:"),
+    "",
+  );
+  assert.equal(habitCandidate("user", "user/message", "你刚才那个做法不对，应该先跑测试"), "你刚才那个做法不对，应该先跑测试");
+});
+test("habit 候选：带 marker 的注入文本仍不算追问（真实误捕获样本）", () => {
+  const injected = [
+    "[上下文提醒] 已用 60%（阈值 60%）。先收尾/分步处理，别再把大段输出堆进上下文",
+    "[会话压缩提示] 会话已压缩，别再继续堆上下文",
+    "[版本核对] 上一条回复在现状句里写了 0.9.8，与现场不一致，别再这么写",
+    "<openviking-context source=\"profile\"> 别再依赖这里的旧快照",
+    "background job pwsh-e6f5 (pwsh: cd x) finished [status: completed, exit code: 1]. Output: 别再",
+  ];
+  for (const t of injected) assert.equal(habitCandidate("user", "user/message", t), "", t);
+  assert.equal(habitCandidate("user", "user/message", "你刚才那个做法不对，应该先跑测试"), "你刚才那个做法不对，应该先跑测试");
 });
