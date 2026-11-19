@@ -290,7 +290,7 @@ export function isTodoCheck(name, args) {
  * 允许 2>&1 / 2>nul / >nul / 2>$null 这类无副作用的重定向。
  */
 const PIPE_DISPLAY =
-  /^(select-object|select|format-table|format-list|format-wide|out-string|out-host|out-null|sort-object|measure-object|convertto-json|findstr|more)\b/i;
+  /^(select-object|select|format-table|format-list|format-wide|out-string|out-host|out-null|sort-object|measure-object|convertto-json|findstr|more|get-date)\b/i;
 
 /**
  * 只影响输出编码、不产生副作用的前缀语句（末尾带 `;`）。
@@ -312,6 +312,23 @@ function stripSafePrefixes(s) {
   return out;
 }
 
+/**
+ * 分号串联里的一段是不是「跑检查器」：允许 `检查器 | 只读显示` 的单条管道，
+ * 但不许段内再夹 `>` 写文件。gate 的 checkRe 只看首段。
+ */
+function isCheckerSegment(seg, gates) {
+  const chunks = String(seg).split("|");
+  const head = chunks[0].trim();
+  if (!head) return false;
+  const hit = TODO_CHECK.test(head) || gates.some((g) => g.checkRe && g.checkRe.test(head));
+  if (!hit) return false;
+  for (let i = 1; i < chunks.length; i++) {
+    const c = chunks[i].trim();
+    if (!c || !PIPE_DISPLAY.test(c) || />/.test(c)) return false;
+  }
+  return true;
+}
+
 export function isCheckerCommandSafe(name, args, gates = []) {
   if (!SHELL_TOOL.test(String(name ?? "").trim())) return false;
   const isChecker = isTodoCheck(name, args) || structCheckIds(name, args, gates).length > 0;
@@ -320,7 +337,20 @@ export function isCheckerCommandSafe(name, args, gates = []) {
     const s = String(raw);
     // 先剥掉无副作用重定向（2>&1 / 2>nul / >nul / 2>$null）
     const stripped = stripSafePrefixes(s.replace(/[0-9*]?>\s*(&[12]|nul\b|\$null)/gi, ""));
-    if (/[;&]/.test(stripped)) return false; // 串联一律拒绝
+    if (/&/.test(stripped)) return false; // `&` / `&&` 串联一律拒绝
+    const parts = stripped.split(";");
+    if (parts.length > 1) {
+      // 分号串联：每一段都必须是检查器、待办检查器或只读显示命令，否则拒绝
+      // （首段不是检查器时不得放行：`Remove-Item x; 检查器` 仍要拦）
+      for (const part of parts) {
+        const seg = part.trim();
+        if (!seg) return false;
+        if (/>/.test(seg)) return false; // 任何一段都不许写文件
+        if (isCheckerSegment(seg, gates)) continue;
+        if (!PIPE_DISPLAY.test(seg)) return false;
+      }
+      continue;
+    }
     const segs = stripped.split("|");
     if (/>/.test(segs[0])) return false; // 主命令不许写文件
     for (let i = 1; i < segs.length; i++) {

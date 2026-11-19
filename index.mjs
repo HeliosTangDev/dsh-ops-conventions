@@ -773,7 +773,8 @@ export function apply(ctx, config = {}) {
     async (exec, next) => {
       try {
         // 校验器白名单：待办/结构检查器是「解锁动作」，必须先放行，否则会死锁。
-        // 严格：只认单条校验器命令（禁止 ; && || | 与文件重定向）。
+        // 严格：检查器命令可带只读显示管道（`| Select-String`）与分号串联到只读显示命令；
+        // 仍禁止 `&`/`&&`、未知段、以及任何 `>` 文件重定向。
         if (isCheckerCommandSafe(exec.name, exec.arguments, structGates)) return next();
         // 窄工具授权层（2026-11-19）：宿主工具绕开会话沙箱，所以“按工作区/按会话授权”必须在这里判。
         if (narrowTool && exec.name === "ops_run") {

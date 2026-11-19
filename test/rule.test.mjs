@@ -149,6 +149,25 @@ test("校验器白名单：允许无副作用前缀（编码设置/chcp），其
   assert.equal(isCheckerCommandSafe("pwsh", { command: enc }), false);
 });
 
+test("校验器白名单：检查器接只读显示管道放行", () => {
+  const gates = [{ id: "tools", checkRe: /tools_check\.py/i, checker: "python tools_check.py" }];
+  assert.equal(isCheckerCommandSafe("pwsh", { command: "python D:\\x\\tools_check.py | Select-String STRUCTURE" }, gates), true);
+});
+
+test("校验器白名单：分号串联到只读显示命令放行（检查器在后）", () => {
+  assert.equal(isCheckerCommandSafe("pwsh", { command: "Get-Date; powershell -File D:\\x\\todo_check.ps1" }), true);
+});
+
+test("校验器白名单：分号串联首段不是检查器/只读显示 → 拒绝", () => {
+  const gates = [{ id: "tools", checkRe: /tools_check\.py/i, checker: "python tools_check.py" }];
+  assert.equal(isCheckerCommandSafe("pwsh", { command: "Remove-Item C:\\temp\\x; python D:\\x\\tools_check.py" }, gates), false);
+});
+
+test("校验器白名单：检查器写文件重定向仍拒绝", () => {
+  const gates = [{ id: "tools", checkRe: /tools_check\.py/i, checker: "python tools_check.py" }];
+  assert.equal(isCheckerCommandSafe("pwsh", { command: "python D:\\x\\tools_check.py > out.txt" }, gates), false);
+});
+
 test("结构门：默认空；配置后按路径命中，跑过检查器即记 id", () => {
   assert.deepEqual(structGatesFor({ file_path: "D:\\a\\b" }), []);
   assert.deepEqual(structCheckIds("pwsh", { command: "python x.py" }), []);
