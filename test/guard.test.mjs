@@ -19,8 +19,10 @@ async function loadPlugin(extra = {}) {
   process.env.OPS_MAINT_REPORT = join(dir, "MAINT-NONE.md");
   writeFileSync(join(dir, "stub.mjs"), "export function createUserMessage(p){ return { role: 'user', ...p }; }\n");
   const ruleHref = pathToFileURL(join(srcDir, "rule.mjs")).href;
+  const configHref = pathToFileURL(join(srcDir, "config.mjs")).href;
   const code = readFileSync(join(srcDir, "index.mjs"), "utf8")
     .replace('from "./rule.mjs"', `from "${ruleHref}"`)
+    .replace('from "./config.mjs"', `from "${configHref}"`)
     .replace('from "@deepseek-ai/dsh-llm"', 'from "./stub.mjs"');
   writeFileSync(join(dir, "index-test.mjs"), code);
   const { apply } = await import(pathToFileURL(join(dir, "index-test.mjs")).href);

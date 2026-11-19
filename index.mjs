@@ -4,6 +4,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createUserMessage } from "@deepseek-ai/dsh-llm";
+import { readExternalConfig } from "./config.mjs";
 import {
   DEFAULT_BLOCKED_TOOLS,
   compactionHintText,
@@ -77,8 +78,20 @@ function existsSyncSafe(p) {
  *  - structGates:   可选：结构门数组 [{id, pathRe, checkRe, checker}]（默认关闭）
  */
 export function apply(ctx, config = {}) {
+  // B 方案（2026-11-20）：配置外置——路径类键放插件自己的 JSON，YAML 只留开关。
+  // YAML 显式键优先；文件读不到/解析失败则完全按 YAML 跑（fail-open，行为不变）。
+  const external = readExternalConfig(config, readJsonFile);
+  if (external.config) config = external.config;
   const skillsDir = resolveSkillsDir(config);
   const logFile = resolveLogFile(config);
+  if (external.file) {
+    log(
+      external.error
+        ? `config file unreadable ${external.file} error=${external.error} (using YAML only)`
+        : `config file=${external.file} keys=${Object.keys(external.config ?? {}).length}` +
+            ` yamlOverrides=${external.overrides.length ? external.overrides.join(",") : "-"}`,
+    );
+  }
   const indexPath = join(skillsDir, "INDEX.md");
   const versionFile = join(skillsDir, "VERSION");
   // 可选：待办镜像（默认不启用；配置 todoFile 才参与硬拦截）

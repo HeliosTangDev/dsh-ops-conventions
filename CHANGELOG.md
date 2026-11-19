@@ -1,3 +1,15 @@
+## 0.9.9（2026-11-20）
+
+### 配置外置：路径类键挪出 `cordis.patch.yml`（B 方案）
+
+- 起因：profile 的 `cordis.patch.yml` 里本插件占约 88 行（其它插件 2–7 行），其中一半是「本机路径」这类纯数据。改一个路径要在几十行 YAML 里找多处。
+- 新增 `config.mjs`：`readExternalConfig(config, readJson)` + `mergeExternalConfig`。YAML 里写 `configFile: <json>` 时读该 JSON 作为底，**YAML 显式键优先**，被覆盖的键名记日志；文件读不到/解析失败则完全按 YAML 跑（fail-open，行为不变）。
+- `index.mjs` 在 `apply()` 最前面合并，并在插件日志写一行：`config file=… keys=N yamlOverrides=…` 或 `config file unreadable …`。
+- 新增 `scripts/migrate-config.mjs`：把 profile 里本插件的「路径类键」（18 个，如 `skillsDir`/`todoFile`/`narrowConfigFile`/`asarCandidates`…）搬到 JSON、YAML 只留开关 + `configFile` 指针；**内建等价断言**（迁移前后插件实际生效的 config 深度相等，去掉新增指针），不一致就不写文件；`--write` 前自动备份 YAML。
+- 本机已迁移（desktop）：YAML 该块从 88 行降到 15 个键，路径键进 `D:\software\ToolsUse\_tools\misc\ops-conventions.json`（1427 字节），备份 `cordis.patch.yml.bak-migrate-20261119T160636`；读回等价 OK。
+- 兼容：不写 `configFile` 的老配置完全不受影响；web profile 未迁移（仍用内联配置，可用同一脚本单独迁）。
+- 测试 +8（无 configFile 不读文件、文件补键、YAML 覆盖并记 overrides、数组整体替换、读文件抛错记 error、非对象报错、空配置返回 null、指针保留），`node --test` 94/94。
+
 ## 0.9.8（2026-11-19）
 
 ### 修：会话工作区取不到导致 ops_run 全部被拒
