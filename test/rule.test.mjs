@@ -47,6 +47,7 @@ import {
   pickAssistantText,
   isSummaryLike,
   betterAssistantText,
+  todoReplyMisses,
 } from "../rule.mjs";
 
 test("reminderText：通用版只给版本 + 清单路径，不夹带个人约定", () => {
@@ -437,8 +438,7 @@ test("correctiveSignal returns the matched marker", () => {
   assert.ok(hit.length > 0, "should return a non-empty marker");
 });
 // ---- habitCandidate：用户消息→习惯收件箱的触发判据（2026-11-11） ----
-test("habitCandidate captures a user corrective message", () => {
-  const hit = habitCandidate("user", "user/message", "为什么这次又没写现场时间？");
+test("habitCandidate captures a user corrective message", () => {  const hit = habitCandidate("user", "user/message", "为什么这次又没写现场时间？");
   assert.ok(hit && hit.length > 0);
 });
 
@@ -620,4 +620,47 @@ test("门禁标记清理：过期与超量都删，保留最新 N 个", () => {
   const del = selectGateMarkFilesToDelete(files, { nowMs: now, maxAgeMs: 14 * day, maxFiles: 3 });
   assert.deepEqual(del.sort(), ["gate-old.json", "gate-x4.json"]); // 过期 1 个 + 超量 1 个
   assert.deepEqual(selectGateMarkFilesToDelete([], { nowMs: now }), []);
+});
+// ---- todoReplyMisses：待办段核对（2026-11-21） ----
+const todoLast = {
+  ts: "2026-11-21T01:00:00+08:00",
+  mainline: "tools",
+  reported: [
+    { id: "f28sg-one-lecture-summary-pending", type: "ask", status: "ASK" },
+    { id: "done-item", type: "path-exists", status: "DONE" },
+  ],
+};
+
+test("todoReplyMisses: no snapshot -> no misses", () => {
+  assert.deepEqual(todoReplyMisses({ replyText: "## 待办\n- x" , todoLast: null }), []);
+});
+
+test("todoReplyMisses: only DONE items -> no misses", () => {
+  const last = { ts: "2026-11-21T01:00:00+08:00", reported: [{ id: "a", status: "DONE" }] };
+  assert.deepEqual(todoReplyMisses({ replyText: "## 待办\n- nothing", todoLast: last }), []);
+});
+
+test("todoReplyMisses: id present in todo section -> no miss", () => {
+  assert.deepEqual(todoReplyMisses({ replyText: "正文\n## 待办\n- f28sg-one-lecture-summary-pending：等截图\n## 自检\n- 无", todoLast }), []);
+});
+
+test("todoReplyMisses: id only in self-check section -> counted as miss", () => {
+  const txt = "正文\n## 待办\n- 无\n## 自检\n- f28sg-one-lecture-summary-pending 仍未确认";
+  assert.deepEqual(todoReplyMisses({ replyText: txt, todoLast }), ["f28sg-one-lecture-summary-pending"]);
+});
+
+test("todoReplyMisses: no todo section at all -> all pending miss", () => {
+  assert.deepEqual(todoReplyMisses({ replyText: "只有正文", todoLast }), ["f28sg-one-lecture-summary-pending"]);
+});
+
+test("todoReplyMisses: stale snapshot is ignored", () => {
+  const txt = "正文\n## 待办\n- 无\n## 自检\n- 无";
+  const nowMs = Date.parse("2026-11-21T12:00:00+08:00");
+  assert.deepEqual(todoReplyMisses({ replyText: txt, todoLast, maxAgeMs: 30 * 60 * 1000, nowMs }), []);
+});
+
+test("todoReplyMisses: fresh snapshot still enforced", () => {
+  const txt = "正文\n## 待办\n- 无\n## 自检\n- 无";
+  const nowMs = Date.parse("2026-11-21T01:10:00+08:00");
+  assert.deepEqual(todoReplyMisses({ replyText: txt, todoLast, maxAgeMs: 30 * 60 * 1000, nowMs }), ["f28sg-one-lecture-summary-pending"]);
 });

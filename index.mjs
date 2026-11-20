@@ -34,6 +34,7 @@ import {
   pickAssistantText,
   isSummaryLike,
   betterAssistantText,
+  todoReplyMisses,
   habitCandidate,
   habitRow,
   correctiveSignal,
@@ -252,6 +253,14 @@ export function apply(ctx, config = {}) {
   const replyWarnedBySid = new Map();
   // 可选：把回复违规升级为门禁（只拦写类工具，最多罚 1 轮，避免死锁）
   const replyCheckBlock = config.replyCheckBlock === true;
+  // 可选：待办段核对门（2026-11-21）——todo_check.ps1 落 todo_last.json；
+  // 上一条回复的「## 待办」段漏了其中的 OPEN/ASK 条目 → 拒绝本次写类工具。
+  // 只认新鲜快照（默认 30 分钟），避免拿旧清单判人；未配置 todoReplyFile 则不启用。
+  const todoReplyGate = config.todoReplyGate === true;
+  const todoReplyFile = typeof config.todoReplyFile === "string" ? config.todoReplyFile : "";
+  const todoReplyMaxAgeMs = Number.isFinite(Number(config.todoReplyMaxAgeMs))
+    ? Number(config.todoReplyMaxAgeMs)
+    : 30 * 60 * 1000;
   // 可选：检查回复里最后一个 @HH:mm 是否本轮（超时/未来即违规）
   const replyTimeCheck =
     config.replyTimeCheck && typeof config.replyTimeCheck === "object" ? config.replyTimeCheck : null;
@@ -895,6 +904,38 @@ export function apply(ctx, config = {}) {
                   "按约定补上缺失内容（例如报状态要带命令、采样时间与数据年龄）后，再重试本次写操作。",
               };
             }
+          }
+        }
+        // 待办段核对门（2026-11-21，可配置）：上一条回复的「## 待办」段必须包含
+        // todo_last.json 里所有仍待处理（OPEN/ASK）的条目 id；漏报就拦这次写操作。
+        // 只认 30 分钟内的快照，且没有待处理项时不拦（不做无内容强制）。
+        if (todoReplyGate && todoReplyFile) {
+          try {
+            const sidR = sess ? (sess.id ?? "default") : "default";
+            const replyTxt = pickReviewText({
+              prevTurn: String(prevReplyBySid.get(sidR) || "") || prevReplyGlobal,
+              cached: String(lastAsstBySid.get(sidR) || ""),
+            });
+            const rep = readJsonFile(todoReplyFile);
+            const misses = todoReplyMisses({
+              replyText: replyTxt,
+              todoLast: rep,
+              maxAgeMs: todoReplyMaxAgeMs,
+              nowMs: Date.now(),
+            });
+            if (misses.length) {
+              log(`guard deny-todo-reply ids=${misses.join(",")} session=${sidR} tool=${exec.name}`);
+              appendSignal("deny", sidR, exec.name, "gate=todo-reply");
+              return {
+                kind: "deny",
+                reason:
+                  "「操作约定｜待办段核对」上一条回复的「## 待办」段漏了本轮待办：" +
+                  misses.join("、") +
+                  "。按 todo_check 输出补齐（含 ASK 逐条列出）后，再重试本次写操作。",
+              };
+            }
+          } catch (err) {
+            log(`todo-reply gate skipped: ${err?.message ?? String(err)}`);
           }
         }
         // 有会话用会话标记（内存 + 落盘），无会话（子代理等）用全局标记，不能直接放行

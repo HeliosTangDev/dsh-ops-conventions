@@ -640,6 +640,35 @@ export function pickReviewText({ prevTurn = "", prev = "", cached = "" } = {}) {
 }
 
 /**
+ * 待办段核对（2026-11-21）：todo_check.ps1 每次运行会落 todo_last.json（reported[]=本轮报出的条目）。
+ * 这里只做纯判断：把「仍待处理（OPEN/ASK）」的 id 与回复的「## 待办」段比对，返回漏报的 id。
+ * 语义边界：
+ *  - 没有 todoLast / reported 为空 → 返回 []（不拦）；
+ *  - todoLast 过期（超过 maxAgeMs）→ 返回 []（不拿旧快照判人）；
+ *  - 回复里没有「## 待办」段且有待处理项 → 全部算漏报；
+ *  - 只在「## 待办」段内找 id（自检段里提到不算数，避免“在别处提了一句”就算报过）。
+ */
+export function todoReplyMisses({ replyText = "", todoLast = null, maxAgeMs = 0, nowMs = 0 } = {}) {
+  const last = todoLast && typeof todoLast === "object" ? todoLast : null;
+  if (!last) return [];
+  if (maxAgeMs > 0 && last.ts) {
+    const ts = Date.parse(String(last.ts));
+    if (Number.isFinite(ts) && nowMs > 0 && nowMs - ts > maxAgeMs) return [];
+  }
+  const reported = Array.isArray(last.reported) ? last.reported : [];
+  const pending = reported
+    .filter((r) => r && (r.status === "ASK" || r.status === "OPEN"))
+    .map((r) => String(r.id || ""))
+    .filter(Boolean);
+  if (!pending.length) return [];
+  const text = String(replyText ?? "");
+  const m = text.match(/##\s*待办([\s\S]*?)(?=\n##\s|\n?$)/);
+  const section = m ? m[1] : "";
+  if (!section) return pending;
+  return pending.filter((id) => !section.includes(id));
+}
+
+/**
  * 门禁标记落盘（2026-11-20）：三个「本会话已做过」的勾（读 INDEX / 跑待办校验器 / 跑结构门检查）
  * 原来只挂在会话对象的内存符号上，会话上下文被替换后新对象没有这些符号 → 同一会话反复被拦。
  * 这里只放纯逻辑：路径净化、读取结果的归一化、并集合并；读写文件在 index.mjs 里做（失败退回内存）。
