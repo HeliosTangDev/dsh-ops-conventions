@@ -1,3 +1,14 @@
+## 0.10.1（2026-11-21）
+
+### 功能开关表 `features`：一处看全、一处关
+
+- 起因：独立功能已 13 项（门铃注入、INDEX 门、待办门、结构门、回复核对、计划门、状态行、维护摘要、信号采集、版本核对、`ops_status`、`ops_run`、`ops_write`），开关散在 YAML + 两份 JSON 里，插件页只能整插件开关。
+- `config.mjs` 新增 `resolveFeatures(config)` 产出 13 个布尔值；`index.mjs` 顶部统一取 `feat`，各子系统的注册/注入条件改读它。
+- **语义只能减不能加**：功能要先在配置里配好（`status: true`、`narrowTool: true` 等），`features: { x: false }` 才能关；单独 `features: { x: true }` 不会打开没配置的功能。未知键忽略。
+- 开关名：`bell` `indexGate` `todoGate` `structGate` `replyCheck` `planGate` `statusLine` `maintHint` `signals` `versionWarn` `statusTool` `opsRun` `opsWrite`。
+- 例：`{ "features": { "planGate": false, "opsWrite": false, "signals": false } }`
+- 测试 +3（默认继承、false 可关、true 不能凭空开、未知键/非对象忽略），`node --test` **120/120**。
+
 ## 0.10.0（2026-11-21）
 
 ### ops_write：宿主侧受控写文件工具

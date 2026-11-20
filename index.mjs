@@ -5,7 +5,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createUserMessage } from "@deepseek-ai/dsh-llm";
-import { readExternalConfig } from "./config.mjs";
+import { readExternalConfig, resolveFeatures } from "./config.mjs";
 import {
   DEFAULT_BLOCKED_TOOLS,
   compactionHintText,
@@ -92,6 +92,8 @@ export function apply(ctx, config = {}) {
   // YAML 显式键优先；文件读不到/解析失败则完全按 YAML 跑（fail-open，行为不变）。
   const external = readExternalConfig(config, readJsonFile);
   if (external.config) config = external.config;
+  // 功能开关表（2026-11-21）：一处看全、一处关；只能减不能加（见 config.mjs 的 resolveFeatures）
+  const feat = resolveFeatures(config);
   const skillsDir = resolveSkillsDir(config);
   const logFile = resolveLogFile(config);
   // 门禁标记落盘（2026-11-20）：勾按 session id 存在 logFile 同级的 gate-marks 目录，
@@ -163,9 +165,9 @@ export function apply(ctx, config = {}) {
   const indexPath = join(skillsDir, "INDEX.md");
   const versionFile = join(skillsDir, "VERSION");
   // 可选：待办镜像（默认不启用；配置 todoFile 才参与硬拦截）
-  const todoFile = typeof config.todoFile === "string" ? config.todoFile : "";
-  const maintReport = typeof config.maintReport === "string" ? config.maintReport : "";
-  const signalsFile = typeof config.signalsFile === "string" ? config.signalsFile : "";
+  const todoFile = feat.todoGate && typeof config.todoFile === "string" ? config.todoFile : "";
+  const maintReport = feat.maintHint && typeof config.maintReport === "string" ? config.maintReport : "";
+  const signalsFile = feat.signals && typeof config.signalsFile === "string" ? config.signalsFile : "";
   const signalsHint = typeof config.signalsHint === "string" ? config.signalsHint : "";
   const bellExtra = typeof config.bellExtra === "string" ? config.bellExtra : "";
   // 可选：个人补充规则文件（每次注入时现读，改文件不用重启；文件不存在则回退 bellExtra）
@@ -181,9 +183,9 @@ export function apply(ctx, config = {}) {
     }
     return bellExtra;
   }
-  const structGates = buildStructGates(config);
+  const structGates = feat.structGate ? buildStructGates(config) : [];
   // 大任务预规划门（2026-11-04）：累计写入不同文件/目录到阈值后，要求存在六段 PLAN.md
-  const planGate = config.planGate === true;
+  const planGate = feat.planGate;
   const planGateAfterFiles = Number(config.planGateAfterFiles) > 0 ? Number(config.planGateAfterFiles) : 4;
   const planGateAfterDirs = Number(config.planGateAfterDirs) > 0 ? Number(config.planGateAfterDirs) : 3;
   const planFile = typeof config.planFile === "string" ? config.planFile : "";
@@ -214,19 +216,19 @@ export function apply(ctx, config = {}) {
     }
   };
   // 可选：现场状态行 / 版本引用核对（默认关闭；需要的文件路径一律由配置传入）
-  const statusEnabled = config.status === true;
+  const statusEnabled = feat.statusLine;
   const statusTodoJson = typeof config.statusTodoJson === "string" ? config.statusTodoJson : "";
   const hostVersionFile = typeof config.hostVersionFile === "string" ? config.hostVersionFile : "";
   const asarCandidates = Array.isArray(config.asarCandidates) ? config.asarCandidates : [];
-  const versionWarning = config.versionWarning === true;
+  const versionWarning = feat.versionWarn;
   const versionWarnFile = typeof config.versionWarnFile === "string" ? config.versionWarnFile : "";
   const installedProfileDirs = Array.isArray(config.installedProfileDirs) ? config.installedProfileDirs : [];
   // 可选：只读状态工具 ops_status（默认关闭）
-  const statusTool = config.statusTool === true;
+  const statusTool = feat.statusTool;
   // 可选：窄工具 ops_run（默认关闭；白名单来自配置文件，路径/参数/解释器都不接受调用方传入）
-  const narrowTool = config.narrowTool === true;
+  const narrowTool = feat.opsRun;
   // 可选：宿主侧受控写文件 ops_write（默认关闭；路径白名单 + 内容校验 + 审计）
-  const writeTool = config.writeTool === true;
+  const writeTool = feat.opsWrite;
   const writeWhitelist = normalizeWriteWhitelist(config.writeWhitelist);
   const narrowConfigFile = typeof config.narrowConfigFile === "string" ? config.narrowConfigFile : "";
   const narrowRoot = typeof config.narrowRoot === "string" ? config.narrowRoot : "";
@@ -254,7 +256,7 @@ export function apply(ctx, config = {}) {
   const todoLastFile = typeof config.todoLastFile === "string" ? config.todoLastFile : "";
   const memoryDir = typeof config.memoryDir === "string" ? config.memoryDir : "";
   // 可选：回复合规扫描（规则由个人配置提供；命中在下一轮注入警告 + 落文件）
-  const replyChecks = Array.isArray(config.replyChecks) ? config.replyChecks : [];
+  const replyChecks = feat.replyCheck && Array.isArray(config.replyChecks) ? config.replyChecks : [];
   const replyWarnFile =
     typeof config.replyWarnFile === "string" && config.replyWarnFile ? config.replyWarnFile : versionWarnFile;
   const replyWarnedBySid = new Map();
@@ -319,7 +321,7 @@ export function apply(ctx, config = {}) {
     }
   }
 
-  const enforce = config.enforce !== false;
+  const enforce = feat.indexGate;
   // 无会话上下文（子代理等）时用全局「已读」标记兜底，避免整类调用绕过守卫
   let globalReadIndex = false;
   let globalReadTodo = false;
@@ -564,6 +566,7 @@ export function apply(ctx, config = {}) {
         if (!gateHit) {
           if (sess) sess[GATE] = version;
           delivered.set(sid, version);
+          if (!feat.bell) return; // features.bell=false：不注入门铃
           const text2 = reminderText(version, indexPath, { extra: readBellExtra() });
           let injectText = text2;
           const integ = bellIntegrity(fileURLToPath(new URL("./rule.mjs", import.meta.url)), join(skillsDir, "bell_state.json"));

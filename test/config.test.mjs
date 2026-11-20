@@ -3,7 +3,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { mergeExternalConfig, readExternalConfig } from "../config.mjs";
+import { mergeExternalConfig, readExternalConfig, resolveFeatures } from "../config.mjs";
 
 test("没有 configFile：不读文件，返回空结果（行为不变）", () => {
   const r = readExternalConfig({ skillsDir: "D:\\a" }, () => {
@@ -70,4 +70,62 @@ test("mergeExternalConfig：没有文件配置时返回 null（不凭空造配�
 test("configFile 自身保留在合并结果里（供插件日志与状态行使用）", () => {
   const r = readExternalConfig({ configFile: "D:\\cfg.json" }, () => ({ skillsDir: "D:\\s" }));
   assert.equal(r.config.configFile, "D:\\cfg.json");
+});
+
+// 2026-11-21（开关表 A）：features 只能"关"，不能凭空打开没配置的功能
+test("features 表：默认继承旧布尔键，features 里的 false 可关掉", () => {
+  const base = {
+    status: true,
+    versionWarning: true,
+    statusTool: true,
+    narrowTool: true,
+    writeTool: true,
+    planGate: true,
+    structGates: [{ id: "tools" }],
+    replyChecks: [{ id: "x" }],
+    todoFile: "D:\\t.md",
+    maintReport: "D:\\m.md",
+    signalsFile: "D:\\s.log",
+  };
+  const f = resolveFeatures(base);
+  assert.equal(f.planGate, true);
+  assert.equal(f.opsRun, true);
+  assert.equal(f.opsWrite, true);
+  assert.equal(f.structGate, true);
+  assert.equal(f.replyCheck, true);
+  assert.equal(f.todoGate, true);
+  assert.equal(f.bell, true);
+  assert.equal(f.indexGate, true);
+
+  const off = resolveFeatures({ ...base, features: { planGate: false, opsRun: false, opsWrite: false, structGate: false, replyCheck: false, todoGate: false, bell: false, indexGate: false } });
+  assert.equal(off.planGate, false);
+  assert.equal(off.opsRun, false);
+  assert.equal(off.opsWrite, false);
+  assert.equal(off.structGate, false);
+  assert.equal(off.replyCheck, false);
+  assert.equal(off.todoGate, false);
+  assert.equal(off.bell, false);
+  assert.equal(off.indexGate, false);
+});
+
+test("features 表：true 也不能打开没配置的功能（只能减不加）", () => {
+  const f = resolveFeatures({ features: { planGate: true, opsRun: true, statusLine: true, versionWarn: true, statusTool: true, opsWrite: true } });
+  assert.equal(f.planGate, false);
+  assert.equal(f.opsRun, false);
+  assert.equal(f.statusLine, false);
+  assert.equal(f.versionWarn, false);
+  assert.equal(f.statusTool, false);
+  assert.equal(f.opsWrite, false);
+  assert.equal(f.structGate, false);
+  assert.equal(f.replyCheck, false);
+  assert.equal(f.todoGate, false);
+  assert.equal(f.maintHint, false);
+  assert.equal(f.signals, false);
+});
+
+test("features 表：未知键忽略、非对象 features 当没写", () => {
+  const f1 = resolveFeatures({ status: true, features: { nope: false } });
+  assert.equal(f1.statusLine, true);
+  const f2 = resolveFeatures({ status: true, features: "bad" });
+  assert.equal(f2.statusLine, true);
 });
