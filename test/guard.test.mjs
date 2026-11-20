@@ -4,7 +4,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const srcDir = fileURLToPath(new URL("..", import.meta.url));
@@ -208,4 +208,19 @@ test("回复核对门：上一轮违规拒写，合规后解除，连续两轮�
   assert.equal((await tryTool(handlers, s2, "write")).kind, "deny");
   await enterTurn(handlers, s2, "继续", [bad]);
   assert.equal((await tryTool(handlers, s2, "write")).kind, "allow");
+});
+
+test("门禁标记落盘：同一会话换上下文对象后不再被拦", async () => {
+  const a = await loadPlugin();
+  const sess1 = session("session-persist");
+  const first = await tryTool(a.handlers, sess1, "write");
+  assert.equal(first.kind, "deny");
+  markRead(a.handlers, sess1, a.indexPath);
+  // 新实例 = 会话上下文被替换后的新对象；同一 session id 应沿用落盘标记
+  const b = await loadPlugin({ skillsDir: dirname(a.indexPath), logFile: join(a.dir, "log.txt") });
+  const again = await tryTool(b.handlers, session("session-persist"), "write");
+  assert.notEqual(again.kind, "deny");
+  // 另一个会话仍然要被拦
+  const other = await tryTool(b.handlers, session("session-other"), "write");
+  assert.equal(other.kind, "deny");
 });

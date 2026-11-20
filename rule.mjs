@@ -639,6 +639,34 @@ export function pickReviewText({ prevTurn = "", prev = "", cached = "" } = {}) {
   return String(prevTurn || prev || cached || "");
 }
 
+/**
+ * 门禁标记落盘（2026-11-20）：三个「本会话已做过」的勾（读 INDEX / 跑待办校验器 / 跑结构门检查）
+ * 原来只挂在会话对象的内存符号上，会话上下文被替换后新对象没有这些符号 → 同一会话反复被拦。
+ * 这里只放纯逻辑：路径净化、读取结果的归一化、并集合并；读写文件在 index.mjs 里做（失败退回内存）。
+ */
+export function gateMarkPath(dir, sid) {
+  const safe = String(sid || "default").replace(/[^A-Za-z0-9._-]/g, "_").slice(0, 100) || "default";
+  return join(dir, `gate-${safe}.json`);
+}
+
+export function normalizeGateMarks(raw) {
+  const o = raw && typeof raw === "object" ? raw : {};
+  const struct = {};
+  if (o.struct && typeof o.struct === "object") {
+    for (const [k, v] of Object.entries(o.struct)) if (v === true || typeof v === "string") struct[k] = true;
+  }
+  const flag = (v) => v === true || (typeof v === "string" && v.length > 0);
+  return { index: flag(o.index), todo: flag(o.todo), struct };
+}
+
+export function mergeGateMarks(prev, patch) {
+  const a = normalizeGateMarks(prev);
+  const p = normalizeGateMarks(patch);
+  const struct = { ...a.struct };
+  for (const [k, v] of Object.entries(p.struct)) if (v) struct[k] = true;
+  return { index: a.index || p.index, todo: a.todo || p.todo, struct };
+}
+
 export function staleClaimVersions(text, live = {}) {
   const claim = /当前|现在|目前|已装|已升到|用的是|最新/;
   const sem = /\b\d+\.\d+\.\d+(?:-[A-Za-z0-9.]+)?\b/g;

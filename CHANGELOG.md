@@ -1,3 +1,12 @@
+## 0.9.11（2026-11-20）
+
+### 门禁标记按会话落盘：同一会话换上下文后不再重复被拦
+
+- 问题：三个「本会话已做过」的勾（读 INDEX / 跑待办校验器 / 跑结构门检查）只挂在会话对象的内存符号上（`index.mjs` 的 `READ_INDEX`/`TODO_CHECKED`/`STRUCT_CHECKED`）。会话上下文被替换/重建后，新对象没有这些符号 → 同一会话重复被拦（SIGNALS 24h：struct 105、todo 87、index 50）。
+- 改法：`rule.mjs` 新增纯函数 `gateMarkPath(dir, sid)`（sid 净化，非法字符不外逃）、`normalizeGateMarks`、`mergeGateMarks`；`index.mjs` 把勾同时写到 `logFile` 同级的 `gate-marks/gate-<sid>.json`，读取时「内存 → 文件」回退，写失败只留内存（宁可多拦一次，不误放行）。
+- 语义不变：真正的新会话（新 session id）仍然要从头做一遍；判定标准一处没放松。
+- 测试 +4（路径净化、归一化、并集合并、集成用例：换上下文对象后同 id 放行、另一 id 仍拦），`node --test` **103/103**。
+
 ## 0.9.10（2026-11-20）
 
 ### 回复核对：扫描拼接后的整条回复，而不是最后一块流式分块

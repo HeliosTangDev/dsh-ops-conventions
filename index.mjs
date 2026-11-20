@@ -19,6 +19,9 @@ import {
   isTodoCheck,
   isTodoRead,
   readJsonFile,
+  gateMarkPath,
+  normalizeGateMarks,
+  mergeGateMarks,
   structCheckIds,
   structGatesFor,
   isWriteTool,
@@ -85,6 +88,35 @@ export function apply(ctx, config = {}) {
   if (external.config) config = external.config;
   const skillsDir = resolveSkillsDir(config);
   const logFile = resolveLogFile(config);
+  // 门禁标记落盘（2026-11-20）：勾按 session id 存在 logFile 同级的 gate-marks 目录，
+  // 会话上下文被替换后仍能沿用；写失败就只留内存（宁可多拦一次，不误放行）。
+  const gateMarksDir = join(dirname(logFile), "gate-marks");
+  const gateMarksCache = new Map();
+  function loadGateMarks(sid) {
+    if (gateMarksCache.has(sid)) return gateMarksCache.get(sid);
+    let marks = normalizeGateMarks({});
+    if (sid && sid !== "default") {
+      try {
+        marks = normalizeGateMarks(readJsonFile(gateMarkPath(gateMarksDir, sid)));
+      } catch {
+        marks = normalizeGateMarks({});
+      }
+    }
+    gateMarksCache.set(sid, marks);
+    return marks;
+  }
+  function saveGateMarks(sid, patch) {
+    const next = mergeGateMarks(loadGateMarks(sid), patch);
+    gateMarksCache.set(sid, next);
+    if (!sid || sid === "default") return next;
+    try {
+      mkdirSync(gateMarksDir, { recursive: true });
+      writeFileSync(gateMarkPath(gateMarksDir, sid), JSON.stringify(next), "utf8");
+    } catch {
+      /* 落盘失败：保留内存标记，不改变判定 */
+    }
+    return next;
+  }
   if (external.file) {
     log(
       external.error
@@ -835,15 +867,17 @@ export function apply(ctx, config = {}) {
             }
           }
         }
-        // 有会话用会话标记；无会话（子代理等）用全局标记，不能直接放行
-        const idxRead = sess ? !!sess[READ_INDEX] : globalReadIndex;
+        // 有会话用会话标记（内存 + 落盘），无会话（子代理等）用全局标记，不能直接放行
+        const sidForMarks = sess ? (sess.id ?? "default") : "default";
+        const diskMarks = sess ? loadGateMarks(sidForMarks) : normalizeGateMarks({});
+        const idxRead = sess ? !!sess[READ_INDEX] || diskMarks.index : globalReadIndex;
         // 待办门只认「真的跑过校验器」：读 OPEN.md 只是读规则，不再算数
-        const todoDone = sess ? !!sess[TODO_CHECKED] : globalTodoChecked;
+        const todoDone = sess ? !!sess[TODO_CHECKED] || diskMarks.todo : globalTodoChecked;
         const needTodo = existsSyncSafe(todoFile) && !todoDone;
         // 结构门（可选）：先判，避免被「已读 INDEX」的早退跳过（曾经的 bug）
         const gateIds = structGatesFor(exec.arguments, structGates, exec.name);
         if (gateIds.length) {
-          const checked = sess ? (sess[STRUCT_CHECKED] || {}) : globalStructChecked;
+          const checked = sess ? { ...diskMarks.struct, ...(sess[STRUCT_CHECKED] || {}) } : globalStructChecked;
           const missing = gateIds.filter((id) => !checked[id]);
           if (missing.length) {
             const g = missing[0];
@@ -941,6 +975,7 @@ export function apply(ctx, config = {}) {
       const sid = sess.id ?? "default";
       if (isIndexRead(exec?.name, exec?.arguments, indexPath)) {
         sess[READ_INDEX] = true;
+        saveGateMarks(sid, { index: true });
         log(`guard index-read session=${sid}`);
       }
       if (isTodoRead(exec?.name, exec?.arguments, todoFile)) {
@@ -949,11 +984,13 @@ export function apply(ctx, config = {}) {
       }
       if (isTodoCheck(exec?.name, exec?.arguments)) {
         sess[TODO_CHECKED] = true;
+        saveGateMarks(sid, { todo: true });
         log(`guard todo-check session=${sid}`);
       }
       for (const id of structCheckIds(exec?.name, exec?.arguments, structGates)) {
         sess[STRUCT_CHECKED] = sess[STRUCT_CHECKED] || {};
         sess[STRUCT_CHECKED][id] = true;
+        saveGateMarks(sid, { struct: { [id]: true } });
         globalStructChecked[id] = true;
         log(`guard struct-check id=${id} session=${sid}`);
       }

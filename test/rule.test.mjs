@@ -38,6 +38,9 @@ import {
   habitCandidate,
   compactionWarnText,
   staleClaimVersions,
+  gateMarkPath,
+  normalizeGateMarks,
+  mergeGateMarks,
   isWriteOrExecTool,
   checkReplyTime,
   pickAssistantText,
@@ -587,4 +590,24 @@ test("habit 候选：带 marker 的注入文本仍不算追问（真实误捕获
   ];
   for (const t of injected) assert.equal(habitCandidate("user", "user/message", t), "", t);
   assert.equal(habitCandidate("user", "user/message", "你刚才那个做法不对，应该先跑测试"), "你刚才那个做法不对，应该先跑测试");
+});
+// 2026-11-20（改进池第 4 条）：门禁「本会话已满足」标记按会话落盘
+test("门禁标记：路径按 sid 净化，非法字符不逃出目录", () => {
+  const p = gateMarkPath("C:\\m", "session-2b02/../../evil id");
+  assert.match(p, /[\\/]gate-session-2b02_\.\._\.\._evil_id\.json$/);
+  assert.equal(gateMarkPath("C:\\m", "").endsWith("gate-default.json"), true);
+});
+
+test("门禁标记：normalize 只认明确的 true / 时间字符串", () => {
+  const m = normalizeGateMarks({ index: "2026-11-20T00:00:00Z", todo: false, struct: { tools: true, notes: 0 } });
+  assert.equal(m.index, true);
+  assert.equal(m.todo, false);
+  assert.deepEqual(m.struct, { tools: true });
+  assert.deepEqual(normalizeGateMarks(null), { index: false, todo: false, struct: {} });
+});
+
+test("门禁标记：merge 取并集，struct 累积不互相覆盖", () => {
+  const a = mergeGateMarks({ index: true, struct: { tools: true } }, { todo: true, struct: { notes: true } });
+  assert.deepEqual(a, { index: true, todo: true, struct: { tools: true, notes: true } });
+  assert.deepEqual(mergeGateMarks({}, {}), { index: false, todo: false, struct: {} });
 });
