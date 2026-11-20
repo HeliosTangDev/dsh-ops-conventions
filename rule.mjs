@@ -639,6 +639,66 @@ export function pickReviewText({ prevTurn = "", prev = "", cached = "" } = {}) {
   return String(prevTurn || prev || cached || "");
 }
 
+// ---- ops_write guard (2026-11-21) ----
+// A host-side write tool that skips the sandbox, so the authorization must live here:
+// absolute paths only, a configured whitelist (exact file or directory prefix), no
+// traversal, protected system areas refused, size cap, JSON validated, .ps1 gets a BOM.
+export const WRITE_MAX_BYTES = 512 * 1024;
+
+/** Normalize a writeWhitelist: keep absolute Windows paths, lowercase, strip trailing separators. */
+export function normalizeWriteWhitelist(list) {
+  const out = [];
+  for (const raw of Array.isArray(list) ? list : []) {
+    const s = String(raw ?? "").trim();
+    if (!s) continue;
+    if (!/^[A-Za-z]:[\\/]/.test(s)) continue;
+    out.push(s.replace(/\//g, "\\").replace(/\\+$/, "").toLowerCase());
+  }
+  return out;
+}
+
+/** Whether one write path is allowed by the normalized whitelist (fail-closed). */
+export function isWritePathAllowed(file, whitelist) {
+  const p = String(file ?? "").trim();
+  if (!/^[A-Za-z]:[\\/]/.test(p)) return { ok: false, reason: "path must be an absolute Windows path" };
+  const norm = p.replace(/\//g, "\\").toLowerCase();
+  if (norm.split("\\").includes("..")) return { ok: false, reason: "path traversal is not allowed" };
+  if (/\\\.dsh\\|\\profiles\\|\\node_modules\\/.test(norm)) {
+    return { ok: false, reason: "protected area (.dsh / profiles / node_modules) is not writable" };
+  }
+  for (const w of whitelist) {
+    if (norm === w || norm.startsWith(w + "\\")) return { ok: true, path: p };
+  }
+  return { ok: false, reason: "path is not in writeWhitelist" };
+}
+
+/** Validate/normalize content before writing: size cap, JSON parse, BOM policy. */
+export function prepareWriteContent(file, content, opts = {}) {
+  const text = String(content ?? "");
+  const bytes = Buffer.from(text, "utf8");
+  if (bytes.length > WRITE_MAX_BYTES) {
+    return { ok: false, reason: `content too large (> ${WRITE_MAX_BYTES} bytes)` };
+  }
+  const lower = String(file ?? "").toLowerCase();
+  if (lower.endsWith(".json")) {
+    try {
+      JSON.parse(text.replace(/^\uFEFF/, ""));
+    } catch (e) {
+      return { ok: false, reason: `JSON invalid: ${e.message}` };
+    }
+  }
+  const plainUtf8 = /\.(json|jsonl|md|txt|yml|yaml|mjs|js|py)$/.test(lower);
+  const enc = String(opts.encoding ?? "").toLowerCase() || (plainUtf8 ? "utf8" : "utf8bom");
+  let out = text;
+  const hasBom = text.charCodeAt(0) === 0xfeff;
+  if (enc === "utf8bom") {
+    if (!hasBom) out = "\uFEFF" + text;
+  } else if (hasBom) {
+    out = text.slice(1);
+  }
+  return { ok: true, content: out };
+}
+
 /**
  * 待办段核对（2026-11-21）：todo_check.ps1 每次运行会落 todo_last.json（reported[]=本轮报出的条目）。
  * 这里只做纯判断：把「仍待处理（OPEN/ASK）」的 id 与回复的「## 待办」段比对，返回漏报的 id。
@@ -1000,8 +1060,7 @@ export function isSummaryLike(text) {
   return /^(User|The user|Assistant|Summary|Conversation summary)\b/i.test(head);
 }
 
-/** 同一轮多条候选：摘要不占位，非摘要取更长者 */
-export function betterAssistantText(prev, next) {
+/** 同一轮多条候选：摘要不占位，非摘要取更长者 */export function betterAssistantText(prev, next) {
   const p = String(prev ?? "");
   const n = String(next ?? "");
   if (!n) return p;

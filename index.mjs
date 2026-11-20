@@ -1,5 +1,6 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -27,6 +28,9 @@ import {
   structGatesFor,
   isWriteTool,
   isWriteOrExecTool,
+  normalizeWriteWhitelist,
+  isWritePathAllowed,
+  prepareWriteContent,
   needsGuard,
   normalizeSessionId,
   projectionFileCandidates,
@@ -221,6 +225,9 @@ export function apply(ctx, config = {}) {
   const statusTool = config.statusTool === true;
   // 可选：窄工具 ops_run（默认关闭；白名单来自配置文件，路径/参数/解释器都不接受调用方传入）
   const narrowTool = config.narrowTool === true;
+  // 可选：宿主侧受控写文件 ops_write（默认关闭；路径白名单 + 内容校验 + 审计）
+  const writeTool = config.writeTool === true;
+  const writeWhitelist = normalizeWriteWhitelist(config.writeWhitelist);
   const narrowConfigFile = typeof config.narrowConfigFile === "string" ? config.narrowConfigFile : "";
   const narrowRoot = typeof config.narrowRoot === "string" ? config.narrowRoot : "";
   let narrowMod = null;
@@ -1175,6 +1182,67 @@ export function apply(ctx, config = {}) {
           });
         })
         .catch((err) => log(`narrow tool skipped: ${err?.message ?? String(err)}`));
+    }
+  }
+
+  // ---- 宿主侧受控写文件 ops_write（2026-11-21；需 config.writeTool: true + writeWhitelist）----
+  // 绕开会话沙箱，所以授权必须放在这里：绝对路径 + 白名单（精确文件或目录前缀）、拒 ..
+  // 与 .dsh/profiles/node_modules、512KB 上限、.json 必须可解析、.ps1 自动补 BOM、每次审计。
+  if (writeTool) {
+    if (!writeWhitelist.length) {
+      log("write tool skipped: config.writeWhitelist empty");
+    } else {
+      import("@deepseek-ai/dsh-tools")
+        .then(({ defineTool }) => {
+          if (!ctx.tools || typeof ctx.tools.register !== "function") {
+            log("write tool skipped: ctx.tools unavailable");
+            return;
+          }
+          ctx.tools.register(
+            defineTool({
+              name: "ops_write",
+              description:
+                "Write ONE file inside a configured path whitelist (host-side, bypasses the session sandbox). Not a general file writer: the path must be absolute and match config.writeWhitelist; traversal and .dsh/profiles/node_modules are refused; content is size-capped; .json must parse; .ps1 gets a UTF-8 BOM; every call is audited.",
+              parameters: {
+                path: { type: "string", description: "Absolute file path; must be inside the configured writeWhitelist" },
+                content: { type: "string", description: "Full new file content" },
+                encoding: { type: "string", description: 'optional: "utf8" (no BOM) or "utf8bom" (default for .ps1/.cmd)' },
+              },
+              output: {
+                schema: { type: "object", additionalProperties: true },
+                render: (_args, value) => [{ type: "text", text: JSON.stringify(value, null, 2) }],
+              },
+              async execute(args) {
+                const file = String(args?.path ?? "");
+                const verdict = isWritePathAllowed(file, writeWhitelist);
+                if (!verdict.ok) {
+                  log(`ops_write deny path=${file} reason=${verdict.reason}`);
+                  return { ok: false, path: file, error: verdict.reason };
+                }
+                const prep = prepareWriteContent(file, args?.content, { encoding: args?.encoding });
+                if (!prep.ok) {
+                  log(`ops_write deny path=${file} reason=${prep.reason}`);
+                  return { ok: false, path: file, error: prep.reason };
+                }
+                let oldHash = "";
+                try { oldHash = createHash("sha256").update(readFileSync(file)).digest("hex"); } catch { oldHash = ""; }
+                try {
+                  writeFileSync(file, prep.content, { encoding: "utf8" });
+                } catch (e) {
+                  log(`ops_write fail path=${file} error=${e?.message ?? String(e)}`);
+                  return { ok: false, path: file, error: e?.message ?? String(e) };
+                }
+                let newHash = "";
+                try { newHash = createHash("sha256").update(readFileSync(file)).digest("hex"); } catch {}
+                const bytes = Buffer.byteLength(prep.content, "utf8");
+                log(`ops_write ok path=${file} bytes=${bytes} old=${oldHash.slice(0, 12) || "-"} new=${newHash.slice(0, 12)}`);
+                return { ok: true, path: file, bytes, oldHash, newHash };
+              },
+            }),
+          );
+          log(`write tool registered: ops_write whitelist=${writeWhitelist.length}`);
+        })
+        .catch((err) => log(`write tool skipped: ${err?.message ?? String(err)}`));
     }
   }
 }

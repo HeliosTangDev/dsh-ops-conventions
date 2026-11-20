@@ -1,3 +1,12 @@
+## 0.10.0（2026-11-21）
+
+### ops_write：宿主侧受控写文件工具
+
+- 新增可选工具 `ops_write`（配置 `writeTool: true` + `writeWhitelist: [...]`，默认关闭）：在宿主进程写单个文件、不经过会话沙箱，因此授权全部放在工具内——绝对路径 + 白名单（精确文件或目录前缀）、拒绝 `..` 逃逸与 `.dsh`/`profiles`/`node_modules`、内容上限 512 KB、`.json` 必须可解析、`.ps1` 自动补 UTF-8 BOM、每次调用写一行审计（`ops_write ok/deny ...`）。
+- 纯函数 `normalizeWriteWhitelist` / `isWritePathAllowed` / `prepareWriteContent` 带单测 `test/ops-write.test.mjs`（6 条：白名单归一、精确/目录匹配、越权拒绝、BOM 策略、JSON 校验、超限）。
+- `node --test` **117/117**。
+- 用途：改工具区脚本、修 BOM 这类「编辑源文件」操作不再需要 `danger-full-access` 审批；`writeWhitelist` 为空时不注册工具。
+
 ## 0.9.12（2026-11-20）
 
 ### 门禁标记文件清理（补 0.9.11）
