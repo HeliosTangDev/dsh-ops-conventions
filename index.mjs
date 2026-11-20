@@ -1,4 +1,4 @@
-import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { spawn } from "node:child_process";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
@@ -22,6 +22,7 @@ import {
   gateMarkPath,
   normalizeGateMarks,
   mergeGateMarks,
+  selectGateMarkFilesToDelete,
   structCheckIds,
   structGatesFor,
   isWriteTool,
@@ -112,10 +113,39 @@ export function apply(ctx, config = {}) {
     try {
       mkdirSync(gateMarksDir, { recursive: true });
       writeFileSync(gateMarkPath(gateMarksDir, sid), JSON.stringify(next), "utf8");
+      pruneGateMarksOnce();
     } catch {
       /* 落盘失败：保留内存标记，不改变判定 */
     }
     return next;
+  }
+  // 清理只在进程内做一次：过期（默认 14 天）与超量（默认保留最新 200 个）都删。
+  let gateMarksPruned = false;
+  function pruneGateMarksOnce() {
+    if (gateMarksPruned) return;
+    gateMarksPruned = true;
+    try {
+      const entries = [];
+      for (const name of readdirSync(gateMarksDir)) {
+        if (!/^gate-.*\.json$/.test(name)) continue;
+        try {
+          entries.push({ file: name, mtimeMs: statSync(join(gateMarksDir, name)).mtimeMs });
+        } catch {
+          /* 单个文件读不到就跳过 */
+        }
+      }
+      const doomed = selectGateMarkFilesToDelete(entries, { maxAgeMs: 14 * 86_400_000, maxFiles: 200 });
+      for (const name of doomed) {
+        try {
+          unlinkSync(join(gateMarksDir, name));
+        } catch {
+          /* 忽略 */
+        }
+      }
+      if (doomed.length) log(`gate-marks pruned=${doomed.length} total=${entries.length}`);
+    } catch {
+      /* 目录不存在等：忽略 */
+    }
   }
   if (external.file) {
     log(

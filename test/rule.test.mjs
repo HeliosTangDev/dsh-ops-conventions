@@ -41,6 +41,7 @@ import {
   gateMarkPath,
   normalizeGateMarks,
   mergeGateMarks,
+  selectGateMarkFilesToDelete,
   isWriteOrExecTool,
   checkReplyTime,
   pickAssistantText,
@@ -610,4 +611,13 @@ test("门禁标记：merge 取并集，struct 累积不互相覆盖", () => {
   const a = mergeGateMarks({ index: true, struct: { tools: true } }, { todo: true, struct: { notes: true } });
   assert.deepEqual(a, { index: true, todo: true, struct: { tools: true, notes: true } });
   assert.deepEqual(mergeGateMarks({}, {}), { index: false, todo: false, struct: {} });
+});
+test("门禁标记清理：过期与超量都删，保留最新 N 个", () => {
+  const now = 1_700_000_000_000;
+  const day = 86_400_000;
+  const mk = (n, ageDays) => ({ file: `gate-${n}.json`, mtimeMs: now - ageDays * day });
+  const files = [mk("new1", 0), mk("new2", 1), mk("old", 20), mk("x3", 2), mk("x4", 3)];
+  const del = selectGateMarkFilesToDelete(files, { nowMs: now, maxAgeMs: 14 * day, maxFiles: 3 });
+  assert.deepEqual(del.sort(), ["gate-old.json", "gate-x4.json"]); // 过期 1 个 + 超量 1 个
+  assert.deepEqual(selectGateMarkFilesToDelete([], { nowMs: now }), []);
 });

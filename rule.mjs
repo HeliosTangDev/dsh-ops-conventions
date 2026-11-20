@@ -667,6 +667,24 @@ export function mergeGateMarks(prev, patch) {
   return { index: a.index || p.index, todo: a.todo || p.todo, struct };
 }
 
+/**
+ * 门禁标记文件清理（2026-11-20）：每会话一个 gate-<sid>.json，会随会话数增长。
+ * 规则：超过 maxAgeMs 的删掉；剩下的只保留最新 maxFiles 个，更老的也删。
+ * 纯函数，输入 [{file, mtimeMs}]，返回要删的文件名列表。
+ */
+export function selectGateMarkFilesToDelete(entries, opts = {}) {
+  const nowMs = Number(opts.nowMs ?? Date.now());
+  const maxAgeMs = Number(opts.maxAgeMs ?? 14 * 86_400_000);
+  const maxFiles = Number(opts.maxFiles ?? 200);
+  const list = Array.isArray(entries)
+    ? entries.filter((e) => e && typeof e.file === "string" && Number.isFinite(e.mtimeMs))
+    : [];
+  const expired = list.filter((e) => nowMs - e.mtimeMs > maxAgeMs).map((e) => e.file);
+  const fresh = list.filter((e) => nowMs - e.mtimeMs <= maxAgeMs).sort((a, b) => b.mtimeMs - a.mtimeMs);
+  const over = fresh.slice(Math.max(0, maxFiles)).map((e) => e.file);
+  return [...new Set([...expired, ...over])];
+}
+
 export function staleClaimVersions(text, live = {}) {
   const claim = /当前|现在|目前|已装|已升到|用的是|最新/;
   const sem = /\b\d+\.\d+\.\d+(?:-[A-Za-z0-9.]+)?\b/g;
