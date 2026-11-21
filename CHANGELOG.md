@@ -1,3 +1,14 @@
+## 0.13.0（2026-11-21）
+
+### 裸调用拦截 `denyBareCommands`：这三种命令必须走 `ops_run`
+
+- 起因：`habit_inbox.ps1 -Done N -Layer L -Why "<自由文本>"`、`ov reindex <任意URI>`、`mem-reindex.ps1 -Uri <任意URI>` 都带着自由文本或可变 URI，白名单（只认字面量）永远装不进去，于是每次都要人点「允许一次」。而这三件事其实都有免审批入口。
+- 新配置 `denyBareCommands: [{ id, pattern, hint }]`：shell 命令串命中 `pattern`（正则，自动加 `i`）就拒绝，回 `hint` 指回替代入口。默认不配＝不生效；非法正则/缺字段的条目跳过不抛。
+- 正则只锚「语句开头或 `; | &` 之后」，所以 `Get-Content D:\x\mem-reindex.ps1` 这类**读**不受影响；`ops_run` / `ops_write` / 其它非 shell 工具完全不查。
+- 能力自检：`opsRun` 关着时门禁自动不生效（没有替代通道就不拦），日志写 `bare-deny gate: idle`。
+- 新增 `features.bareCommandGate`，可用 `features: { "bareCommandGate": false }` 关。
+- 测试 +6（规则构建与非法正则、裸 ov reindex、启动 mem-reindex*.ps1、读脚本不拦、`-Done` 拦而 `-List`/`-DoneFromFile` 放行、非 shell 工具豁免、空规则）。
+
 ## 0.12.0（2026-11-21）
 
 ### 结构门只读豁免 `writeOnly`：读操作不再被拦

@@ -33,6 +33,8 @@ import {
   prepareWriteContent,
   normalizeDenyWritePaths,
   rawWriteHit,
+  buildBareDenyRules,
+  bareDenyHit,
   needsGuard,
   normalizeSessionId,
   projectionFileCandidates,
@@ -191,6 +193,15 @@ export function apply(ctx, config = {}) {
   const denyRawWritePaths =
     feat.rawWriteGate && (feat.opsRun || feat.opsWrite) ? normalizeDenyWritePaths(config.denyRawWritePaths) : [];
   const denyRawWriteHint = typeof config.denyRawWriteHint === "string" ? config.denyRawWriteHint.trim() : "";
+  // 裸调用拦截（2026-11-21，B）：这些命令只能走 ops_run；没有 ops_run 时自动不启用（防锁死）。
+  const bareDenyRules = feat.bareCommandGate && feat.opsRun ? buildBareDenyRules(config) : [];
+  if (feat.bareCommandGate) {
+    log(
+      bareDenyRules.length
+        ? `bare-deny gate: rules=${bareDenyRules.length}`
+        : "bare-deny gate: idle (opsRun off)",
+    );
+  }
   if (feat.rawWriteGate) {
     log(
       denyRawWritePaths.length
@@ -1001,6 +1012,21 @@ export function apply(ctx, config = {}) {
                 `「操作约定｜裸写禁区」${hit} 不走直接写或命令行写。` +
                 (denyRawWriteHint ||
                   "改用 ops_write（有白名单、带审计）或 ops_run 的固定入口（improve / decisions / todo-write 等），它们免审批。"),
+            };
+          }
+        }
+        // 裸调用拦截（2026-11-21，B）：这三种形态已有免审批入口，直连一律拒
+        if (bareDenyRules.length) {
+          const hit = bareDenyHit(exec.name, exec.arguments, bareDenyRules);
+          if (hit) {
+            const sidRaw2 = sess ? (sess.id ?? "default") : "default";
+            log(`guard deny-bare-call id=${hit.id} session=${sidRaw2} tool=${exec.name}`);
+            appendSignal("deny", sidRaw2, exec.name, "gate=bare:" + hit.id);
+            return {
+              kind: "deny",
+              reason:
+                `「操作约定｜裸调用拦截」这条命令（${hit.id}）已有免审批入口，不要直连。` +
+                (hit.hint || "改用 ops_run 的对应条目。"),
             };
           }
         }

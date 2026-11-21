@@ -419,6 +419,42 @@ export function structCheckIds(name, args, gates = []) {
   return ids;
 }
 
+// ---- 裸调用拦截（2026-11-21，B）：这些命令一律改走 ops_run，别直连 ----
+/** 配置里每条 { id, pattern, hint }：正则非法或字段缺失就跳过，不抛。 */
+export function buildBareDenyRules(config = {}) {
+  const list = Array.isArray(config?.denyBareCommands) ? config.denyBareCommands : [];
+  const out = [];
+  for (const r of list) {
+    if (!r || typeof r !== "object") continue;
+    const id = String(r.id ?? "").trim();
+    const src = String(r.pattern ?? "").trim();
+    if (!id || !src) continue;
+    try {
+      out.push({ id, re: new RegExp(src, "i"), hint: String(r.hint ?? "").trim() });
+    } catch {
+      /* 非法正则跳过 */
+    }
+  }
+  return out;
+}
+
+/**
+ * 命中返回 { id, hint }，否则空串。
+ * 只查 shell 工具（命令串），ops_run / ops_write 等非 shell 不查——它们是替代通道本身。
+ * 正则只锚在「语句开头或 ; | & 之后」，避免把 Get-Content <脚本路径> 这种读操作当成调用。
+ */
+export function bareDenyHit(toolName, args = {}, rules = []) {
+  if (!Array.isArray(rules) || rules.length === 0) return "";
+  const n = String(toolName ?? "").trim().toLowerCase();
+  if (!n || !SHELL_TOOL.test(n)) return "";
+  for (const raw of collectStrings(args)) {
+    const s = String(raw ?? "");
+    if (!s) continue;
+    for (const r of rules) if (r.re.test(s)) return { id: r.id, hint: r.hint };
+  }
+  return "";
+}
+
 // ---- 裸写禁区（2026-11-21，A2）：这些文件只走 ops_write / ops_run 固定入口 ----
 // 只挡「裸改文件」与「命令行写」；只读命令、受控通道、读类工具一律放行。
 // 路径按「等于或在其子路径下」判定，不做裸前缀匹配（否则 DECISIONS.md.bak 会被误拦）。

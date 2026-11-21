@@ -42,6 +42,7 @@ export function resolveFeatures(config = {}) {
     opsRun: c.narrowTool === true,
     opsWrite: c.writeTool === true,
     rawWriteGate: Array.isArray(c.denyRawWritePaths) && c.denyRawWritePaths.length > 0,
+    bareCommandGate: Array.isArray(c.denyBareCommands) && c.denyBareCommands.length > 0,
   };
   const out = { ...base };
   for (const key of Object.keys(base)) {
