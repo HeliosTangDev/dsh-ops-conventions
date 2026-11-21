@@ -1,3 +1,15 @@
+## 0.11.0（2026-11-21）
+
+### 裸写禁区 `denyRawWritePaths`：这几个文件只能走受控通道
+
+- 起因：7 天 222 次授权请求里 142 次（64%）是「从笔记/课程/博客会话跨区写工具区」——改进池、决策台账、记忆索引。它们本来就有免审批入口（`ops_run` 的 `improve` / `decisions` / `todo-write`，`ops_write`），但当时直接用裸 `edit`/`pwsh`，每次都要人点「允许一次」。
+- 配置 `denyRawWritePaths: [路径...]`：命中即拒（只报命中的那个路径），拒绝理由指回受控通道。默认不配＝不生效。
+- 只拦两种：裸文件写工具（`write`/`edit`/`multi_edit`/`apply_patch`/`notebook_edit` 的 path 类参数）、**命令行写**（先过 `isShellWrite`，只读命令如 `Get-Content` 不拦）。`ops_write` / `ops_run` / `read` / `grep` 一律放行。
+- 路径判定按「等于或在其子路径下」，不做裸前缀匹配，避免 `DECISIONS.md.bak` 这类同名文件被误拦。
+- **能力自检**：`ops_run` 与 `ops_write` 都没开时门禁自动不生效（没有通道可走就不拦），日志写 `raw-write gate: idle`。
+- 新增 `features.rawWriteGate`，可用 `features: { "rawWriteGate": false }` 关。
+- 测试 +5（归一化、命中与不命中、内容提到路径不算、只读命令放行、受控通道豁免）。
+
 ## 0.10.1（2026-11-21）
 
 ### 功能开关表 `features`：一处看全、一处关

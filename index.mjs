@@ -31,6 +31,8 @@ import {
   normalizeWriteWhitelist,
   isWritePathAllowed,
   prepareWriteContent,
+  normalizeDenyWritePaths,
+  rawWriteHit,
   needsGuard,
   normalizeSessionId,
   projectionFileCandidates,
@@ -184,6 +186,18 @@ export function apply(ctx, config = {}) {
     return bellExtra;
   }
   const structGates = feat.structGate ? buildStructGates(config) : [];
+  // 裸写禁区（2026-11-21，A2）：这几个文件只走 ops_write / ops_run 固定入口。
+  // 没有免审批通道时自动不启用（否则会把人锁死，拒绝理由也没地方可指）。
+  const denyRawWritePaths =
+    feat.rawWriteGate && (feat.opsRun || feat.opsWrite) ? normalizeDenyWritePaths(config.denyRawWritePaths) : [];
+  const denyRawWriteHint = typeof config.denyRawWriteHint === "string" ? config.denyRawWriteHint.trim() : "";
+  if (feat.rawWriteGate) {
+    log(
+      denyRawWritePaths.length
+        ? `raw-write gate: paths=${denyRawWritePaths.length}`
+        : "raw-write gate: idle (opsRun/opsWrite both off)",
+    );
+  }
   // 大任务预规划门（2026-11-04）：累计写入不同文件/目录到阈值后，要求存在六段 PLAN.md
   const planGate = feat.planGate;
   const planGateAfterFiles = Number(config.planGateAfterFiles) > 0 ? Number(config.planGateAfterFiles) : 4;
@@ -971,6 +985,22 @@ export function apply(ctx, config = {}) {
                 `「操作约定｜结构门:${g}」本会话还没跑过该区域的结构检查。先执行：` +
                 (gate ? gate.checker : "该区域的结构检查器") +
                 "（它会列出结构与规范问题；跑一次即放行，发现问题先修），然后重试本次写操作。",
+            };
+          }
+        }
+        // 裸写禁区（2026-11-21，A2）：命中即拒，把路指回受控通道，不给裸写留口子
+        if (denyRawWritePaths.length) {
+          const hit = rawWriteHit(exec.name, exec.arguments, denyRawWritePaths);
+          if (hit) {
+            const sidRaw = sess ? (sess.id ?? "default") : "default";
+            log(`guard deny-raw-write path=${hit} session=${sidRaw} tool=${exec.name}`);
+            appendSignal("deny", sidRaw, exec.name, "gate=raw-write");
+            return {
+              kind: "deny",
+              reason:
+                `「操作约定｜裸写禁区」${hit} 不走直接写或命令行写。` +
+                (denyRawWriteHint ||
+                  "改用 ops_write（有白名单、带审计）或 ops_run 的固定入口（improve / decisions / todo-write 等），它们免审批。"),
             };
           }
         }

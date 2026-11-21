@@ -413,6 +413,63 @@ export function structCheckIds(name, args, gates = []) {
   return ids;
 }
 
+// ---- 裸写禁区（2026-11-21，A2）：这些文件只走 ops_write / ops_run 固定入口 ----
+// 只挡「裸改文件」与「命令行写」；只读命令、受控通道、读类工具一律放行。
+// 路径按「等于或在其子路径下」判定，不做裸前缀匹配（否则 DECISIONS.md.bak 会被误拦）。
+const RAW_WRITE_FILE_TOOLS = new Set(["write", "edit", "multi_edit", "apply_patch", "notebook_edit"]);
+const RAW_WRITE_EXEMPT_TOOLS = new Set(["ops_write", "ops_run"]);
+const RAW_WRITE_PATH_KEYS = ["path", "file_path", "filePath", "target"];
+
+/** 归一化禁区路径：正斜杠转反斜杠、转小写、去尾部反斜杠、丢非字符串与空值。 */
+export function normalizeDenyWritePaths(list) {
+  if (!Array.isArray(list)) return [];
+  const out = [];
+  for (const raw of list) {
+    if (typeof raw !== "string") continue;
+    let s = raw.trim().replace(/\//g, "\\").toLowerCase();
+    while (s.endsWith("\\")) s = s.slice(0, -1);
+    if (s && !out.includes(s)) out.push(s);
+  }
+  return out;
+}
+
+/** 这个路径是否命中禁区（等于禁区本身，或在其子路径下）。 */
+export function denyWriteHit(file, list) {
+  if (typeof file !== "string" || !file.trim()) return "";
+  const f = file.trim().replace(/\//g, "\\").toLowerCase();
+  for (const p of Array.isArray(list) ? list : []) {
+    if (f === p || f.startsWith(p + "\\")) return p;
+  }
+  return "";
+}
+
+/**
+ * 裸写命中判定：命中返回命中的禁区路径，否则空串。
+ * - 文件写工具：只认 path 类参数（内容里提到路径不算）；
+ * - shell：先过 isShellWrite（只读命令放行），再按子串匹配命令串；
+ * - ops_write / ops_run 与读类工具一律豁免。
+ */
+export function rawWriteHit(toolName, args, list = []) {
+  if (!Array.isArray(list) || list.length === 0) return "";
+  const n = String(toolName ?? "").trim().toLowerCase();
+  if (!n || RAW_WRITE_EXEMPT_TOOLS.has(n)) return "";
+  if (RAW_WRITE_FILE_TOOLS.has(n)) {
+    const a = args && typeof args === "object" ? args : {};
+    for (const k of RAW_WRITE_PATH_KEYS) {
+      const hit = denyWriteHit(a[k], list);
+      if (hit) return hit;
+    }
+    return "";
+  }
+  if (!SHELL_TOOL.test(n)) return "";
+  if (!isShellWrite(n, args)) return "";
+  for (const raw of collectStrings(args)) {
+    const s = String(raw).replace(/\//g, "\\").toLowerCase();
+    for (const p of list) if (s.includes(p)) return p;
+  }
+  return "";
+}
+
 /** 硬拦截时回给模型的拒绝理由（只报缺的那几项，且给可直接执行的命令） */
 export function denyReason(indexPath, version, todoPath, todoCheckCmd, flags = {}) {
   const v = version ? ` v${version}` : "";
