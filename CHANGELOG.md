@@ -1,3 +1,15 @@
+## 0.14.3（2026-11-22）
+
+### 修：结构门误伤——正文里出现命令字样不该触发
+
+- 反馈来源：博客会话编辑文档时被 `结构门:env` 拒一次，原因是**正文里有 `reg add` 字样**；插件日志核对：`guard deny-struct gate=env … tool=pwsh`（2026-11-21T17:33/17:39Z 两条），确实是 shell 命令把文档正文带进了命令文本。
+- 改法（`structGatesFor`）：
+  - **shell 工具**：先剥离引号与 here-string 内的文本（`stripQuotedText`）再匹配——被引号包住的命令字样是数据，不是要执行的命令；裸写的 `reg add HKCU\X` 仍照样拦。
+  - **文件工具**（`write`/`edit`/`multi_edit`/`apply_patch`/`notebook_edit`）：只看路径类参数（`path`/`file_path`/`paths` 等），**绝不看 `content`/`old_string`**。
+  - **未知能力**（工具名为空或 `ops_run`/`ops_write` 这类）：保持 fail-closed，仍按全部字符串匹配。
+- 已知代价（有意接受）：`pwsh -Command "reg add …"` 这种把命令整体塞进引号的写法会漏拦——门禁是提醒件，不为它牺牲日常可用性。
+- 测试 +1（write/edit 正文含命令字样不触发、路径命中仍触发、shell 裸命令仍触发、未知能力仍 fail-closed），`node --test` **147/147**。
+
 ## 0.14.2（2026-11-22）
 
 ### 修：`test/plan-file.test.mjs` 带 BOM，导致 v0.14.1 的 release 直接失败

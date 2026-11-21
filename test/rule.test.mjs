@@ -664,3 +664,17 @@ test("todoReplyMisses: fresh snapshot still enforced", () => {
   const nowMs = Date.parse("2026-11-21T01:10:00+08:00");
   assert.deepEqual(todoReplyMisses({ replyText: txt, todoLast, maxAgeMs: 30 * 60 * 1000, nowMs }), ["f28sg-one-lecture-summary-pending"]);
 });
+// 2026-11-22（博客会话反馈）：env 门误伤——文件内容里出现 "reg add" 不该触发环境门
+test("结构门：文件工具只看 path，不看正文内容（env 门误伤修复）", () => {
+  const gates = buildStructGates({
+    structGates: [
+      { id: "env", pathRe: "\\breg(\\.exe)?\\s+add\\b", checkRe: "env-before\\.ps1", checker: "x", tools: ["pwsh", "bash", "cmd"] },
+      { id: "notes", pathRe: "blog[/\\\\]article[/\\\\]course", checkRe: "notes_check\\.py", checker: "y" },
+    ],
+  });
+  const docPath = "D:/TANG/blog/article/course/lesson.md";
+  assert.deepEqual(structGatesFor({ file_path: docPath, content: "执行 reg add HKCU\\X 即可" }, gates, "write"), ["notes"]);
+  assert.deepEqual(structGatesFor({ file_path: "D:/tmp/x.md", content: "reg add HKCU\\X" }, gates, "write"), []);
+  assert.deepEqual(structGatesFor({ path: "D:/tmp/x.md", old_string: "reg add", new_string: "reg delete" }, gates, "edit"), []);
+  assert.deepEqual(structGatesFor({ command: "reg add HKCU\\X /v a /d 1" }, gates, "pwsh"), ["env"]);
+});

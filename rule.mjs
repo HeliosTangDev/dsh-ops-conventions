@@ -403,13 +403,41 @@ export function planFileFor(configured, workspace) {
   return ws.replace(/[\\/]+$/, "") + sep + "_tasks" + sep + "PLAN.md";
 }
 
+/** 剥掉引号/here-string 内的文本：那是“数据”，不是要执行的命令（结构门匹配用，2026-11-22） */
+export function stripQuotedText(s) {
+  return String(s ?? "")
+    .replace(/@"[\s\S]*?"@/g, " ")
+    .replace(/@'[\s\S]*?'@/g, " ")
+    .replace(/"[^"]*"/g, " ")
+    .replace(/'[^']*'/g, " ");
+}
+
 export function structGatesFor(args, gates = [], toolName = "") {
   const ids = [];
   const tn = String(toolName ?? "").trim().toLowerCase();
   // 只读豁免（2026-11-21）：门配了 writeOnly 时，「能证明是读」的调用不再触发——
   // shell 且不是写命令、或工具名明确只读；其余（含 ops_run / ops_write 等未知能力）照拦，fail-closed。
   const readOnlyCall = SHELL_TOOL.test(tn) ? !isShellWrite(tn, args) : isReadOnlyTool(tn);
-  for (const raw of collectStrings(args)) {
+  // 2026-11-22（博客会话反馈）：匹配面按工具类型收窄，避免“正文里出现命令字样”被误拦。
+  //   shell：只看命令文本，且先剥掉引号/here-string 内的内容（那是数据，不是要执行的命令）；
+  //   文件工具：只看路径类参数，绝不看 content / old_string。
+  const shellCall = SHELL_TOOL.test(tn);
+  const FILE_EDIT = /^(write|edit|multi_edit|apply_patch|notebook_edit)$/i;
+  const fileCall = FILE_EDIT.test(tn);
+  const PATH_KEYS = new Set(["path", "file_path", "filePath", "notebook_path", "target_file", "paths"]);
+  const candidates = [];
+  if (shellCall) {
+    for (const raw of collectStrings(args)) candidates.push(stripQuotedText(String(raw)));
+  } else if (fileCall) {
+    for (const [k, v] of Object.entries(args && typeof args === "object" ? args : {})) {
+      if (!PATH_KEYS.has(k)) continue;
+      for (const raw of collectStrings(v)) candidates.push(String(raw));
+    }
+  } else {
+    // 未知能力（工具名为空或非文件工具，如 ops_run / ops_write）：维持 fail-closed，按全部字符串匹配
+    for (const raw of collectStrings(args)) candidates.push(String(raw));
+  }
+  for (const raw of candidates) {
     const s = String(raw).replace(/\\/g, "/");
     for (const g of gates) {
       if (g.writeOnly && readOnlyCall) continue;
