@@ -1,3 +1,15 @@
+## 0.14.1（2026-11-22）
+
+### 功能分区：三组开关（A 方案）
+
+- 现状：子系统已到 15 项，职责从“约定执行”扩到“观测 + 宿主执行工具”。按演进节奏分三组（`config.mjs` 的 `FEATURE_GROUPS`）：
+  - `conventions`：`bell` `indexGate` `todoGate` `structGate` `replyCheck` `planGate` `rawWriteGate` `bareCommandGate`；
+  - `observability`：`statusLine` `maintHint` `signals` `versionWarn` `statusTool`；
+  - `execTools`：`opsRun` `opsWrite`。
+- 用法：`features: { "execTools": false }` 一次关整组；组名与单项开关同级、不嵌套。语义仍是**只能减不能加**（组名写 true 不会打开没配置的子系统）。
+- 包结构不变（仍 1 个包），只是开关分组 + README 分节，发版链路不翻倍；等出现“只装门禁不装执行工具”的需求再考虑物理拆包。
+- 测试 +2（组关整组/其它组不受影响、组名 true 不打开未配置项），`node --test` **145/145**。
+
 ## 0.14.0（2026-11-22）
 
 ### 预规划门按会话工作区解析 PLAN.md

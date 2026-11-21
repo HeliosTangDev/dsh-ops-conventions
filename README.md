@@ -93,6 +93,27 @@ node install.mjs /path/to/profile --uninstall     # 卸载
   disabled: false
 ```
 
+### 功能分区（2026-11-22）
+
+15 个子系统按演进节奏分三组，可用组开关一次关掉一整组（`features` 仍是“只能减不能加”）：
+
+| 分区 | 成员 | 说明 |
+|---|---|---|
+| `conventions` | `bell` `indexGate` `todoGate` `structGate` `replyCheck` `planGate` `rawWriteGate` `bareCommandGate` | 约定注入与门禁，跟你的规则一起变 |
+| `observability` | `statusLine` `maintHint` `signals` `versionWarn` `statusTool` | 状态行 / 维护摘要 / 信号 / 版本核对 / `ops_status` |
+| `execTools` | `opsRun` `opsWrite` | 宿主侧执行（绕过会话沙箱，权限敏感） |
+
+```json
+{
+  "features": {
+    "execTools": false,
+    "planGate": false
+  }
+}
+```
+
+上面表示：`opsRun`/`opsWrite` 整组关掉，另外单独关掉 `planGate`。组名与单项开关同级、都写在 `features` 里，不嵌套。
+
 ### 窄工具（`ops_run`，默认关闭）
 
 只解决一件事：让 agent 在**不放开任意执行**的前提下，跑你指定的那几个脚本。

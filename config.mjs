@@ -22,6 +22,12 @@ export function mergeExternalConfig(yamlConfig, fileConfig) {
  * `features: { x: false }` 才能把它关掉；单独 `features: { x: true }` 不会凭空打开没配置的功能。
  * 未知键忽略，`features` 不是对象时当没写。
  */
+/** 功能分区（2026-11-22）：三组子系统，可按组一次关掉。 */
+export const FEATURE_GROUPS = {
+  conventions: ["bell", "indexGate", "todoGate", "structGate", "replyCheck", "planGate", "rawWriteGate", "bareCommandGate"],
+  observability: ["statusLine", "maintHint", "signals", "versionWarn", "statusTool"],
+  execTools: ["opsRun", "opsWrite"],
+};
 export function resolveFeatures(config = {}) {
   const c = config && typeof config === "object" ? config : {};
   const raw = c.features && typeof c.features === "object" && !Array.isArray(c.features) ? c.features : {};
@@ -45,6 +51,11 @@ export function resolveFeatures(config = {}) {
     bareCommandGate: Array.isArray(c.denyBareCommands) && c.denyBareCommands.length > 0,
   };
   const out = { ...base };
+  // 组级开关：features.{conventions|observability|execTools}=false 关掉整组（仍只能减不能加）
+  for (const [group, keys] of Object.entries(FEATURE_GROUPS)) {
+    if (raw[group] !== false) continue;
+    for (const k of keys) out[k] = false;
+  }
   for (const key of Object.keys(base)) {
     if (raw[key] === false) out[key] = false;
   }

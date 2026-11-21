@@ -3,7 +3,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { mergeExternalConfig, readExternalConfig, resolveFeatures } from "../config.mjs";
+import { mergeExternalConfig, readExternalConfig, resolveFeatures, FEATURE_GROUPS } from "../config.mjs";
 
 test("没有 configFile：不读文件，返回空结果（行为不变）", () => {
   const r = readExternalConfig({ skillsDir: "D:\\a" }, () => {
@@ -128,4 +128,30 @@ test("features 表：未知键忽略、非对象 features 当没写", () => {
   assert.equal(f1.statusLine, true);
   const f2 = resolveFeatures({ status: true, features: "bad" });
   assert.equal(f2.statusLine, true);
+});
+// 2026-11-22（A 方案：功能分区）：组级开关一次关掉一整组的子系统
+test("功能分区：conventions 组关掉整组，其它组不受影响", () => {
+  const base = {
+    status: true, versionWarning: true, statusTool: true, narrowTool: true, writeTool: true,
+    planGate: true, structGates: [{ id: "tools" }], replyChecks: [{ id: "x" }],
+    todoFile: "D:\\t.md", maintReport: "D:\\m.md", signalsFile: "D:\\s.log",
+    denyBareCommands: ["x"], denyRawWritePaths: ["y"],
+  };
+  assert.deepEqual(FEATURE_GROUPS.conventions.length, 8);
+  const off = resolveFeatures({ ...base, features: { conventions: false } });
+  for (const k of FEATURE_GROUPS.conventions) assert.equal(off[k], false, k);
+  assert.equal(off.statusLine, true);
+  assert.equal(off.opsRun, true);
+  const off2 = resolveFeatures({ ...base, features: { execTools: false } });
+  assert.equal(off2.opsRun, false);
+  assert.equal(off2.opsWrite, false);
+  assert.equal(off2.bell, true);
+});
+
+test("功能分区：组名写 true 不能打开没配置的组，未知组忽略", () => {
+  const f = resolveFeatures({ features: { conventions: true, observability: true, execTools: true, nope: false } });
+  assert.equal(f.bell, true); // bell 默认开
+  assert.equal(f.planGate, false); // 没配置就还是 off
+  assert.equal(f.statusLine, false);
+  assert.equal(f.opsRun, false);
 });
