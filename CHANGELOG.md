@@ -1,3 +1,12 @@
+## 0.14.2（2026-11-22）
+
+### 修：`test/plan-file.test.mjs` 带 BOM，导致 v0.14.1 的 release 直接失败
+
+- 现象：v0.14.1 的 release 工作流在第一步 `Reject BOM in release files` 退出（日志点名 `./test/plan-file.test.mjs`），Test/Pack/Release 全没跑，Release 未生成。
+- 修：去掉该文件 3 字节 BOM（1145 → 1142 字节）；全仓复扫 json/yml/yaml/mjs/md，仅此一个。
+- 机制补救：新增 `test/bom.test.mjs`，`node --test` 扫全树，任何 BOM 文件即失败——本地测试就红，不用等打完 tag 才发现；CI 同一门禁保留作双保险。
+- `node --test` **146/146**。
+
 ## 0.14.1（2026-11-22）
 
 ### 功能分区：三组开关（A 方案）
