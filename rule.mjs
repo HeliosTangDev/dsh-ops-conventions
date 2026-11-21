@@ -391,6 +391,18 @@ export function buildStructGates(config = {}) {
 }
 
 /** 这次调用命中了哪些结构门（按参数里的路径匹配；gate 可限定 tools） */
+/**
+ * Per-session PLAN.md path: prefer the session workspace so multi-file work in other
+ * workspaces does not need an escalation just to write the plan file.
+ */
+export function planFileFor(configured, workspace) {
+  const cfg = typeof configured === "string" ? configured.trim() : "";
+  const ws = typeof workspace === "string" ? workspace.trim() : "";
+  if (!ws) return cfg;
+  const sep = ws.includes("\\") || !ws.includes("/") ? "\\" : "/";
+  return ws.replace(/[\\/]+$/, "") + sep + "_tasks" + sep + "PLAN.md";
+}
+
 export function structGatesFor(args, gates = [], toolName = "") {
   const ids = [];
   const tn = String(toolName ?? "").trim().toLowerCase();

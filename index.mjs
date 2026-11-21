@@ -30,6 +30,7 @@ import {
   isWriteOrExecTool,
   normalizeWriteWhitelist,
   isWritePathAllowed,
+  planFileFor,
   prepareWriteContent,
   normalizeDenyWritePaths,
   rawWriteHit,
@@ -213,14 +214,32 @@ export function apply(ctx, config = {}) {
   const planGate = feat.planGate;
   const planGateAfterFiles = Number(config.planGateAfterFiles) > 0 ? Number(config.planGateAfterFiles) : 4;
   const planGateAfterDirs = Number(config.planGateAfterDirs) > 0 ? Number(config.planGateAfterDirs) : 3;
-  const planFile = typeof config.planFile === "string" ? config.planFile : "";
+  const planFileCfg = typeof config.planFile === "string" ? config.planFile : "";
   const FILE_EDIT_TOOLS = new Set(["write", "edit", "multi_edit", "apply_patch", "notebook_edit"]);
   const PLAN_FILES = Symbol.for("dsh.opsConventions.planFiles");
   const PLAN_DIRS = Symbol.for("dsh.opsConventions.planDirs");
   const globalPlanFiles = new Set();
   const globalPlanDirs = new Set();
   const normPath = (p) => String(p).replace(/\//g, "\\").toLowerCase();
-  const isPlanTarget = (p) => !!p && normPath(p) === normPath(planFile);
+  // 2026-11-22: resolve the caller workspace locally - index.mjs gets copied to a temp
+  // directory by the tests, so importing ./narrow.mjs here would fail to resolve.
+  const workspaceOf = (exec) => {
+    const pick = (v) => (typeof v === "string" && v.trim() ? v.trim() : "");
+    const s = exec?.agent?.session;
+    const a = exec?.agent;
+    return (
+      pick(s?.cwd) ||
+      pick(s?.header?.cwd) ||
+      pick(s?.meta?.cwd) ||
+      pick(s?.workspace?.path) ||
+      pick(s?.workspacePath) ||
+      pick(s?.workspaceDir) ||
+      pick(a?.cwd) ||
+      pick(a?.workspace?.path) ||
+      ""
+    );
+  };
+  const isPlanTarget = (p, target = planFileCfg) => !!p && !!target && normPath(p) === normPath(target);
   const writeTarget = (exec) => {
     const a = exec?.arguments || {};
     const p = a.path ?? a.file_path ?? a.filePath ?? a.notebook_path ?? a.target_file;
@@ -232,9 +251,9 @@ export function apply(ctx, config = {}) {
     }
     return "";
   };
-  const planSectionsOk = () => {
+  const planSectionsOk = (target = planFileCfg) => {
     try {
-      const txt = readFileSync(planFile, "utf8");
+      const txt = readFileSync(target, "utf8");
       return (txt.match(/^##\s*[1-6]\./gm) || []).length >= 6;
     } catch {
       return false;
@@ -1031,9 +1050,10 @@ export function apply(ctx, config = {}) {
           }
         }
         // 大任务预规划门（2026-11-04）：累计写入不同文件/目录到阈值后，没有六段 PLAN.md 就拒绝后续写
+        const planFile = planFileFor(planFileCfg, workspaceOf(exec));
         if (planGate && planFile && FILE_EDIT_TOOLS.has(exec.name)) {
           const target = writeTarget(exec);
-          if (!isPlanTarget(target) && !planSectionsOk()) {
+          if (!isPlanTarget(target, planFile) && !planSectionsOk(planFile)) {
             const files = sess ? (sess[PLAN_FILES] || new Set()) : globalPlanFiles;
             const dirs = sess ? (sess[PLAN_DIRS] || new Set()) : globalPlanDirs;
             if (files.size >= planGateAfterFiles || dirs.size >= planGateAfterDirs) {
@@ -1087,9 +1107,10 @@ export function apply(ctx, config = {}) {
       }
       const sess = exec?.agent?.session;
       // 大任务预规划：累计成功写入的不同文件/目录（PLAN.md 本身不计）
+      const planFile = planFileFor(planFileCfg, workspaceOf(exec));
       if (planGate && planFile && FILE_EDIT_TOOLS.has(exec?.name)) {
         const t = writeTarget(exec);
-        if (t && !isPlanTarget(t)) {
+        if (t && !isPlanTarget(t, planFile)) {
           const files = sess ? (sess[PLAN_FILES] || (sess[PLAN_FILES] = new Set())) : globalPlanFiles;
           const dirs = sess ? (sess[PLAN_DIRS] || (sess[PLAN_DIRS] = new Set())) : globalPlanDirs;
           files.add(normPath(t));

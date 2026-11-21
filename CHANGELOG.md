@@ -1,3 +1,12 @@
+## 0.14.0（2026-11-22）
+
+### 预规划门按会话工作区解析 PLAN.md
+
+- 起因：`planFile` 是全局单一路径（原来是 `ToolsDev\tasks\PLAN.md`），在别的工作区做多文件任务时，写这个文件本身就要 `danger-full-access`——被迫为「写计划」提权。
+- 改法：`rule.mjs` 新增纯函数 `planFileFor(configured, workspace)`；`index.mjs` 在预规划门里用 `resolveCallerWorkspace(sess, agent)` 拿到会话工作区，解析成 `<workspace>\_tasks\PLAN.md`；拿不到工作区时回落到配置的 `planFile`（行为不变）。
+- `isPlanTarget` / `planSectionsOk` 改为接收目标路径参数，不再依赖模块级常量。
+- 测试 +5（工作区优先、尾部分隔符、正斜杠、无工作区回落、全空）。
+
 ## 0.13.0（2026-11-21）
 
 ### 裸调用拦截 `denyBareCommands`：这三种命令必须走 `ops_run`
