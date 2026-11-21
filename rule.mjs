@@ -380,6 +380,8 @@ export function buildStructGates(config = {}) {
         checker: String(g.checker),
         // 可选：只对这些工具生效（如环境门只管 shell，避免编辑文档提到命令名就误拦）
         tools: Array.isArray(g.tools) ? g.tools.map((t) => String(t).toLowerCase()) : [],
+        // 可选：只对「会写」的调用生效（只读命令 / 只读工具豁免）；默认 false = 原行为
+        writeOnly: g.writeOnly === true,
       });
     } catch {
       /* 非法正则跳过 */
@@ -392,9 +394,13 @@ export function buildStructGates(config = {}) {
 export function structGatesFor(args, gates = [], toolName = "") {
   const ids = [];
   const tn = String(toolName ?? "").trim().toLowerCase();
+  // 只读豁免（2026-11-21）：门配了 writeOnly 时，「能证明是读」的调用不再触发——
+  // shell 且不是写命令、或工具名明确只读；其余（含 ops_run / ops_write 等未知能力）照拦，fail-closed。
+  const readOnlyCall = SHELL_TOOL.test(tn) ? !isShellWrite(tn, args) : isReadOnlyTool(tn);
   for (const raw of collectStrings(args)) {
     const s = String(raw).replace(/\\/g, "/");
     for (const g of gates) {
+      if (g.writeOnly && readOnlyCall) continue;
       if (g.tools && g.tools.length > 0 && tn && !g.tools.includes(tn)) continue;
       if (g.pathRe.test(s) && !ids.includes(g.id)) ids.push(g.id);
     }

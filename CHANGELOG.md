@@ -1,3 +1,12 @@
+## 0.12.0（2026-11-21）
+
+### 结构门只读豁免 `writeOnly`：读操作不再被拦
+
+- 起因：结构门只按 `pathRe` 匹配参数里的路径，不看这次调用是不是写。列个目录（`Get-ChildItem D:\software\ToolsUse\_tools`）或 `read`/`grep` 命中路径也会被 `deny-struct` 拦一次，24h 同类 13 次。
+- 新增可选门配置 `writeOnly: true`：命中路径时，**能证明是读就不拦**——① shell 且不是写命令（`isShellWrite` 判定）；② 工具名明确只读（`isReadOnlyTool`）。其余情况（`edit`/`write`/shell 写，以及 `ops_run`/`ops_write` 这类能力未知的）**照拦**，保持 fail-closed。
+- 默认 `writeOnly: false`，不配就是原行为；`env` 门**不要**加（它靠 `reg add` 这类非写动词匹配，加了会失效），用例里用 `reg add HKCU\X` 钉住这条回归。
+- 测试 +7（默认 false、只读命令豁免、写命令仍拦、文件写工具仍拦、只读工具豁免、未知能力 fail-closed、legacy 门行为不变）。
+
 ## 0.11.0（2026-11-21）
 
 ### 裸写禁区 `denyRawWritePaths`：这几个文件只能走受控通道
