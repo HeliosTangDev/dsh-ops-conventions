@@ -810,13 +810,24 @@ export function apply(ctx, config = {}) {
           };
           const prev = pick(decMsgs) || pick(inMsgs);
           const asstCount = decMsgs.filter(isAssistant).length + inMsgs.filter(isAssistant).length;
+          // 2026-11-26 A: 中间工具步不跑回复核对；只有回合最后一条可见回复才查。
+          const lastMsg = inMsgs.length ? inMsgs[inMsgs.length - 1] : (decMsgs.length ? decMsgs[decMsgs.length - 1] : null);
+          const lastRole = String(lastMsg?.role ?? lastMsg?.type ?? "");
+          const lastIsTool = /^(tool|function|tool_result|tool-result)$/i.test(lastRole) || !!(lastMsg && (lastMsg.tool_call_id || lastMsg.toolCallId));
+          const prevHasToolCalls = !!(prev && (
+            (Array.isArray(prev.tool_calls) && prev.tool_calls.length) ||
+            (Array.isArray(prev.toolCalls) && prev.toolCalls.length) ||
+            (Array.isArray(prev.content) && prev.content.some((x) => x && ["tool_use", "tool-call", "tool_call"].includes(x.type)))
+          ));
+          const intermediate = lastIsTool || prevHasToolCalls;
+          if (intermediate) log(`reply scan skipped: intermediate last=${lastRole} prevTool=${prevHasToolCalls}`);
           const cachedText = String(lastAsstBySid.get(sid) || "");
           const prevTurn = String(prevReplyBySid.get(sid) || "") || prevReplyGlobal;
           // 2026-11-20: reply-check must scan the stitched reply, not the last streamed chunk
           // (a final chunk starting after "## 待办" made reply-sections-no-todo fire falsely).
           const txt = pickReviewText({ prevTurn, prev: prev ? extractText(prev) : "", cached: cachedText });
           log(`version scan: dec=${decMsgs.length} in=${inMsgs.length} asst=${asstCount} sid=${sid} prevTurn=${prevTurn.length} cached=${cachedText.length} textLen=${txt ? txt.length : -1}`);
-          if (txt) {
+          if (txt && !intermediate) {
             const installed = new Set();
             try {
               for (const prof of installedProfileDirs) {

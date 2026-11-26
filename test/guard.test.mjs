@@ -210,6 +210,24 @@ test("回复核对门：上一轮违规拒写，合规后解除，连续两轮�
   assert.equal((await tryTool(handlers, s2, "write")).kind, "allow");
 });
 
+test("回复核对门：中间工具步不触发（只查回合最终回复）", async () => {
+  const replyChecks = [
+    { id: "status-needs-time", pattern: "bell=v\\d+", require: "@\\d{1,2}:\\d{2}", message: "报状态要带采样时间" },
+  ];
+  const { handlers, indexPath } = await loadPlugin({ replyChecks, replyCheckBlock: true });
+  const toolCall = {
+    role: "assistant",
+    content: [{ type: "text", text: "现场 bell=v17" }],
+    tool_calls: [{ id: "call-1", type: "function", function: { name: "read", arguments: "{}" } }],
+  };
+  const s = session("s-reply-intermediate");
+  await enterTurn(handlers, s, "你好");
+  markRead(handlers, s, indexPath);
+  const r = await enterTurn(handlers, s, "继续", [toolCall]);
+  assert.ok(!JSON.stringify(r.messages).includes("回复核对"));
+  assert.equal((await tryTool(handlers, s, "write")).kind, "allow");
+});
+
 test("门禁标记落盘：同一会话换上下文对象后不再被拦", async () => {
   const a = await loadPlugin();
   const sess1 = session("session-persist");
