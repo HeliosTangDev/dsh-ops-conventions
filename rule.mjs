@@ -926,8 +926,11 @@ export function staleClaimVersions(text, live = {}) {
   for (const rawLine of String(text || "").split(/\r?\n/)) {
     if (!claim.test(rawLine)) continue;
     const line = rawLine.replace(RANGE, " ");
+    // 2026-11-28: IPv4 里的 127.0.0 / 0.0.1 不是版本号，先算出占位区间再跳过。
+    const ipSpans = [...line.matchAll(/\b\d{1,3}(?:\.\d{1,3}){3}\b/g)].map((m) => [m.index, m.index + m[0].length]);
     for (const m of line.matchAll(sem)) {
       const v = m[0];
+      if (ipSpans.some(([a, b]) => m.index >= a && m.index + v.length <= b)) continue;
       if (installed.has(v) || ignored.has(v)) continue;
       // 2026-11-11: 插件自身版本与“要求/范围”表达式不是本机现状，别当误报。
       const before = line.slice(Math.max(0, m.index - 30), m.index);
@@ -1269,7 +1272,7 @@ export function habitCandidate(role, type, text) {
   // 2026-11-20：补上带属性的 <openviking-context ...>、[上下文提醒]/[会话压缩提示]/[版本核对] 等前缀，
   // 以及后台任务完成通知（"background job … finished [status: …]"）——它们曾一天内被误捕获多条。
   if (
-    /^(\[操作约定|<openviking-context\b|<available-skills>|Instructions from|Relevant memory from OpenViking|\[上下文提醒\]|\[会话压缩提示\]|\[版本核对\]|\[回复核对\]|\[事件信号\]|\[维护报告\]|\[OpenViking memory plugin\]|background job\b)/.test(
+    /^(\[操作约定|<openviking-context\b|<available-skills>|Instructions from|Relevant memory from OpenViking|This is an automatically generated checkpoint|This is a summary of the conversation|Conversation summary|\[上下文提醒\]|\[会话压缩提示\]|\[版本核对\]|\[回复核对\]|\[事件信号\]|\[维护报告\]|\[OpenViking memory plugin\]|background job\b)/.test(
       body,
     )
   ) {

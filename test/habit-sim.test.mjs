@@ -43,3 +43,8 @@ test("sim: injected memory context is not a user habit signal", () => {
   const ctx = "<openviking-context>\nRelevant memory from OpenViking. 之前说过的内容";
   assert.equal(habitRow(SID, "user", "user/message", ctx), null);
 });
+// 2026-11-28: 英文压缩/检查点消息也走 user/message，曾被当成用户追问记进收件箱。
+test("sim: english compaction checkpoint is not a user habit signal", () => {
+  const body = "This is an automatically generated checkpoint condensing an earlier span of the conversation to free up context. 为啥这里没处理";
+  assert.equal(habitRow(SID, "user", "user/message", body), null);
+});

@@ -678,3 +678,7 @@ test("结构门：文件工具只看 path，不看正文内容（env 门误伤�
   assert.deepEqual(structGatesFor({ path: "D:/tmp/x.md", old_string: "reg add", new_string: "reg delete" }, gates, "edit"), []);
   assert.deepEqual(structGatesFor({ command: "reg add HKCU\\X /v a /d 1" }, gates, "pwsh"), ["env"]);
 });
+test("staleClaimVersions ignores IPv4 addresses in claim sentences", () => {
+  const live = { bellVersion: "117", host: "0.2.2-rc.5" };
+  assert.deepEqual(staleClaimVersions("当前代理是 127.0.0.1:8080，门铃 bell=v117", live), []);
+});
